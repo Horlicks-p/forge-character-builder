@@ -17,30 +17,33 @@ EXTENSION_ROOT = Path(__file__).resolve().parent.parent
 PAGE_SIZE = 48
 
 LIBRARIES = {
-    "姿勢": {
+    "Poses": {
         "key": "pose",
         "file": "pose-zh.json",
         "primary": "体系",
+        "primary_label": "System",
         "secondary": "分类",
-        "title": "姿势名称",
+        "secondary_label": "Category",
         "thumb": "缩略图",
         "image": "原图",
     },
-    "服裝": {
+    "Outfits": {
         "key": "costume",
         "file": "costume-zh.json",
         "primary": "分类",
+        "primary_label": "Category",
         "secondary": None,
-        "title": "服装名称",
+        "secondary_label": None,
         "thumb": "缩略图",
         "image": "原图",
     },
-    "人物": {
+    "Portraits": {
         "key": "portrait",
         "file": "portrait-zh.json",
         "primary": "分区",
+        "primary_label": "Section",
         "secondary": "发长",
-        "title": "标题",
+        "secondary_label": "Hair length",
         "thumb": "缩略图",
         "image": "原图",
     },
@@ -48,6 +51,63 @@ LIBRARIES = {
 
 NSFW_POSE_SYSTEMS = {"全身單人・性感系", "全身单人・性感系", "雙人纏綿", "双人缠绵"}
 NSFW_COSTUME_CATEGORIES = {"內衣・睡衣", "内衣・睡衣", "性感穿搭"}
+
+VALUE_TRANSLATIONS = {
+    "上半身单人": "Single-person upper body",
+    "双人缠绵": "Intimate pair",
+    "全身单人・性感系": "Single-person full body — sensual",
+    "全身单人・标准系": "Single-person full body — standard",
+    "可爱系": "Cute",
+    "正常位（传教士）": "Missionary position",
+    "立位": "Standing position",
+    "立位贴身": "Close standing",
+    "后入位": "Rear-entry position",
+    "后仰・挺背": "Leaning back / arched back",
+    "坐位": "Seated position",
+    "坐位贴身": "Close seated",
+    "坐姿": "Sitting",
+    "扭身": "Twisting",
+    "侧坐・女孩坐": "Side sitting",
+    "侧卧位": "Side-lying position",
+    "性感・大胆系": "Sensual / bold",
+    "前倾": "Leaning forward",
+    "挤胸・强调事业线系": "Emphasized cleavage",
+    "背向坐位": "Back-facing seated",
+    "贴身": "Close contact",
+    "贴脸系": "Face close-up",
+    "趴卧": "Lying prone",
+    "面对面坐位": "Face-to-face seated",
+    "特殊": "Special",
+    "站姿": "Standing",
+    "骑乘位": "Riding position",
+    "跪立": "Kneeling",
+    "跪立・四肢着地": "Kneeling / all fours",
+    "蹲姿": "Squatting",
+    "正面": "Front",
+    "仰视": "Low angle",
+    "侧面": "Side",
+    "俯视": "High angle",
+    "斜侧": "Three-quarter",
+    "内衣・睡衣": "Lingerie / sleepwear",
+    "冬季穿搭": "Winter outfits",
+    "性感穿搭": "Sensual outfits",
+    "泳装・度假": "Swimwear / resort",
+    "春季穿搭": "Spring outfits",
+    "派对・礼服": "Party / formalwear",
+    "秋季穿搭": "Autumn outfits",
+    "夏季穿搭": "Summer outfits",
+    "正脸参考": "Face reference",
+    "造型氛围": "Styled portrait",
+    "中发": "Medium hair",
+    "中长发": "Medium-long hair",
+    "长发": "Long hair",
+    "短发": "Short hair",
+}
+
+
+def _english_value(value: object) -> str:
+    text = str(value or "").strip()
+    return VALUE_TRANSLATIONS.get(text, text)
 
 
 def _find_gallery_root() -> Path | None:
@@ -85,9 +145,9 @@ def _load_library(label: str) -> tuple[dict, ...]:
 
 
 def _is_nsfw(label: str, item: dict) -> bool:
-    if label == "姿勢":
+    if label == "Poses":
         return item.get("体系", "") in NSFW_POSE_SYSTEMS
-    if label == "服裝":
+    if label == "Outfits":
         return item.get("分类", "") in NSFW_COSTUME_CATEGORIES
     return False
 
@@ -101,19 +161,24 @@ def _filtered_items(
 ) -> list[dict]:
     config = LIBRARIES[label]
     normalized_query = (query or "").strip().casefold()
-    primary = "" if primary in (None, "", "全部") else primary
-    secondary = "" if secondary in (None, "", "全部") else secondary
+    primary = "" if primary in (None, "", "All") else primary
+    secondary = "" if secondary in (None, "", "All") else secondary
 
     results: list[dict] = []
     for item in _load_library(label):
         if safe_mode and _is_nsfw(label, item):
             continue
-        if primary and item.get(config["primary"], "") != primary:
+        if primary and _english_value(item.get(config["primary"], "")) != primary:
             continue
-        if secondary and config["secondary"] and item.get(config["secondary"], "") != secondary:
+        if secondary and config["secondary"] and _english_value(item.get(config["secondary"], "")) != secondary:
             continue
         if normalized_query:
-            haystack = f"{item.get('id', '')} {item.get('检索', '')} {item.get(config['title'], '')}".casefold()
+            english_fields = " ".join(
+                _english_value(item.get(field, ""))
+                for field in (config["primary"], config["secondary"])
+                if field
+            )
+            haystack = f"{item.get('id', '')} {english_fields} {_prompt_for(label, item)}".casefold()
             if normalized_query not in haystack:
                 continue
         results.append(item)
@@ -122,13 +187,13 @@ def _filtered_items(
 
 def _option_values(label: str, field: str | None, safe_mode: bool) -> list[str]:
     if not field:
-        return ["全部"]
+        return ["All"]
     values = {
-        str(item.get(field, "")).strip()
+        _english_value(item.get(field, ""))
         for item in _load_library(label)
         if item.get(field) and (not safe_mode or not _is_nsfw(label, item))
     }
-    return ["全部", *sorted(values)]
+    return ["All", *sorted(values)]
 
 
 def _depth_path(item: dict) -> Path:
@@ -140,7 +205,7 @@ def _depth_path(item: dict) -> Path:
 
 
 def _asset_path(label: str, item: dict, *, thumbnail: bool, use_depth: bool) -> Path:
-    if label == "姿勢" and use_depth:
+    if label == "Poses" and use_depth:
         if thumbnail:
             raw = str(item.get("原图", "")).replace("\\", "/").lstrip("/")
             stem = raw[len("img/") :].rsplit(".", 1)[0] if raw.startswith("img/") else Path(raw).stem
@@ -156,27 +221,30 @@ def _asset_path(label: str, item: dict, *, thumbnail: bool, use_depth: bool) -> 
 
 
 def _item_title(label: str, item: dict) -> str:
-    config = LIBRARIES[label]
-    return str(item.get(config["title"], item.get("id", "未命名")))
+    item_id = str(item.get("id", "Untitled"))
+    if label == "Poses":
+        category = _english_value(item.get("分类", "Pose"))
+        return f"{category} pose"
+    if label == "Outfits":
+        return f"Outfit {item_id}"
+    hair_length = _english_value(item.get("发长", ""))
+    return f"{hair_length or 'Portrait'} reference"
 
 
 def _prompt_for(label: str, item: dict) -> str:
-    if label == "姿勢":
-        angle = item.get("角度", "")
-        category = item.get("分类", "")
-        title = _item_title(label, item)
-        system = item.get("体系", "")
-        return ", ".join(part for part in [f"{angle}視角" if angle else "", title, category, system, "character pose reference"] if part)
+    if label == "Poses":
+        angle = _english_value(item.get("角度", ""))
+        category = _english_value(item.get("分类", ""))
+        system = _english_value(item.get("体系", ""))
+        return ", ".join(part for part in [f"{angle} view" if angle else "", category, system, "character pose reference"] if part)
 
-    if label == "服裝":
+    if label == "Outfits":
         english = str(item.get("关键词", "")).strip()
-        title = _item_title(label, item)
-        return ", ".join(part for part in [english, title, "detailed outfit"] if part)
+        return ", ".join(part for part in [english, "detailed outfit"] if part)
 
-    hair_length = item.get("发长", "")
-    hairstyle = item.get("发型名称", "")
-    title = _item_title(label, item)
-    return ", ".join(part for part in ["character portrait reference", hair_length, hairstyle, title] if part)
+    section = _english_value(item.get("分区", ""))
+    hair_length = _english_value(item.get("发长", ""))
+    return ", ".join(part for part in ["character portrait reference", section, hair_length] if part)
 
 
 def _caption(label: str, item: dict) -> str:
@@ -194,7 +262,7 @@ def _render_gallery(
     page: int,
 ):
     if GALLERY_ROOT is None:
-        return [], [], 1, "找不到圖庫資料。請安裝原始 ai-pose-gallery-zh 資料庫。"
+        return [], [], 1, "Gallery data was not found. Install the original ai-pose-gallery-zh dataset."
 
     items = _filtered_items(label, query, primary, secondary, safe_mode)
     total_pages = max(1, (len(items) + PAGE_SIZE - 1) // PAGE_SIZE)
@@ -211,7 +279,7 @@ def _render_gallery(
         gallery.append((str(path), _caption(label, item)))
         ids.append(str(item.get("id", "")))
 
-    info = f"第 {page} / {total_pages} 頁，共 {len(items):,} 筆"
+    info = f"Page {page} of {total_pages} · {len(items):,} items"
     return gallery, ids, page, info
 
 
@@ -227,8 +295,8 @@ def _refresh(
     config = LIBRARIES[label]
     primary_options = _option_values(label, config["primary"], safe_mode)
     secondary_options = _option_values(label, config["secondary"], safe_mode)
-    primary_value = primary if primary in primary_options else "全部"
-    secondary_value = secondary if secondary in secondary_options else "全部"
+    primary_value = primary if primary in primary_options else "All"
+    secondary_value = secondary if secondary in secondary_options else "All"
     gallery, ids, page, info = _render_gallery(
         label,
         query,
@@ -243,19 +311,19 @@ def _refresh(
         ids,
         page,
         info,
-        gr.update(choices=primary_options, value=primary_value, label=config["primary"]),
+        gr.update(choices=primary_options, value=primary_value, label=config["primary_label"]),
         gr.update(
             choices=secondary_options,
             value=secondary_value,
-            label=config["secondary"] or "第二篩選",
+            label=config["secondary_label"] or "Secondary filter",
             visible=bool(config["secondary"]),
         ),
-        gr.update(visible=label == "姿勢"),
+        gr.update(visible=label == "Poses"),
     )
 
 
 def _change_library(label, query, safe_mode, use_depth):
-    return _refresh(label, query, "全部", "全部", safe_mode, use_depth, 1)
+    return _refresh(label, query, "All", "All", safe_mode, use_depth, 1)
 
 
 def _reset_page(*values):
@@ -275,54 +343,54 @@ def _find_item(label: str, item_id: str) -> dict | None:
 
 def _select_item(label: str, use_depth: bool, item_ids: list[str], evt: gr.SelectData):
     if not item_ids or evt.index is None or evt.index >= len(item_ids):
-        return None, "", "", "尚未選取素材"
+        return None, "", "", "No item selected"
 
     item = _find_item(label, item_ids[evt.index])
     if item is None:
-        return None, "", "", "找不到選取的素材"
+        return None, "", "", "The selected item could not be found"
 
     path = _asset_path(label, item, thumbnail=False, use_depth=bool(use_depth))
     if not path.is_file():
-        return None, "", "", f"找不到圖片：{path.name}"
+        return None, "", "", f"Image not found: {path.name}"
 
     image = ImageOps.exif_transpose(Image.open(path)).convert("RGB")
     title = _item_title(label, item)
-    details = f"{title}\nID：{item.get('id', '')}"
-    if label == "姿勢":
-        details += f"\n模式：{'Depth 控制圖' if use_depth else '姿勢參考圖'}"
+    details = f"{title}\nID: {item.get('id', '')}"
+    if label == "Poses":
+        details += f"\nMode: {'Depth control image' if use_depth else 'Pose reference image'}"
     return image, str(path), _prompt_for(label, item), details
 
 
 def _random_item(label, query, primary, secondary, safe_mode, use_depth):
     items = _filtered_items(label, query, primary, secondary, safe_mode)
     if not items:
-        return None, "", "", "目前篩選條件沒有素材"
+        return None, "", "", "No items match the current filters"
     item = random.choice(items)
     path = _asset_path(label, item, thumbnail=False, use_depth=bool(use_depth))
     if not path.is_file():
-        return None, "", "", "隨機素材的圖片不存在"
+        return None, "", "", "The randomly selected image is missing"
     image = ImageOps.exif_transpose(Image.open(path)).convert("RGB")
-    details = f"{_item_title(label, item)}\nID：{item.get('id', '')}"
+    details = f"{_item_title(label, item)}\nID: {item.get('id', '')}"
     return image, str(path), _prompt_for(label, item), details
 
 
 def _image_for_controlnet(path: str, label: str, use_depth: bool):
     if not path:
-        raise gr.Error("請先選取一張素材")
+        raise gr.Error("Select an item first")
     image = ImageOps.exif_transpose(Image.open(path)).convert("RGB")
     array = np.asarray(image)
-    if label == "姿勢" and use_depth:
+    if label == "Poses" and use_depth:
         return array, True, "None"
-    if label == "姿勢":
+    if label == "Poses":
         return array, True, "dw_openpose_full"
     return array, True, "None"
 
 
 def _gallery_ui():
     source_status = (
-        f"資料來源：{GALLERY_ROOT}"
+        f"Data source: {GALLERY_ROOT}"
         if GALLERY_ROOT is not None
-        else "尚未安裝圖庫資料；請依 README 將 ai-pose-gallery-zh 放在相鄰資料夾。"
+        else "Gallery data is not installed. Follow the README to add the ai-pose-gallery-zh dataset."
     )
 
     with gr.Blocks(elem_id="ai_pose_gallery") as interface:
@@ -330,25 +398,25 @@ def _gallery_ui():
             """
             <header class="apg-hero">
               <div>
-                <h1>AI 姿勢圖庫</h1>
-                <p>挑選姿勢、服裝與人物參考，直接送進 Forge 工作流程。</p>
+                <h1>AI Pose Gallery</h1>
+                <p>Browse pose, outfit, and portrait references for your Forge workflow.</p>
               </div>
-              <div class="apg-count">4,345 <span>筆中文素材</span></div>
+              <div class="apg-count">4,345 <span>REFERENCE IMAGES</span></div>
             </header>
             """
         )
 
         with gr.Row(elem_classes=["apg-toolbar"]):
-            library = gr.Radio(list(LIBRARIES), value="姿勢", label="圖庫", elem_classes=["apg-library"])
-            search = gr.Textbox(label="搜尋", placeholder="名稱、分類或 ID", scale=3)
-            search_button = gr.Button("搜尋", variant="secondary", scale=0, min_width=90)
-            random_button = gr.Button("隨機挑選", variant="secondary", scale=0, min_width=110)
+            library = gr.Radio(list(LIBRARIES), value="Poses", label="Library", elem_classes=["apg-library"])
+            search = gr.Textbox(label="Search", placeholder="Category, type, or ID", scale=3)
+            search_button = gr.Button("Search", variant="secondary", scale=0, min_width=90)
+            random_button = gr.Button("Random pick", variant="secondary", scale=0, min_width=110)
 
         with gr.Row(elem_classes=["apg-filters"]):
-            primary = gr.Dropdown(["全部"], value="全部", label="體系")
-            secondary = gr.Dropdown(["全部"], value="全部", label="分類")
-            safe_mode = gr.Checkbox(value=True, label="安全模式（隱藏 18+）")
-            use_depth = gr.Checkbox(value=False, label="使用 Depth 圖")
+            primary = gr.Dropdown(["All"], value="All", label="System")
+            secondary = gr.Dropdown(["All"], value="All", label="Category")
+            safe_mode = gr.Checkbox(value=True, label="Safe mode (hide 18+)")
+            use_depth = gr.Checkbox(value=False, label="Use depth image")
 
         page = gr.State(1)
         item_ids = gr.State([])
@@ -357,7 +425,7 @@ def _gallery_ui():
         with gr.Row(elem_classes=["apg-workbench"]):
             with gr.Column(scale=4, elem_classes=["apg-browser"]):
                 gallery = gr.Gallery(
-                    label="素材",
+                    label="References",
                     columns=6,
                     rows=2,
                     height=590,
@@ -368,31 +436,31 @@ def _gallery_ui():
                     elem_classes=["apg-gallery"],
                 )
                 with gr.Row(elem_classes=["apg-pagination"]):
-                    previous = gr.Button("上一頁", min_width=90)
-                    page_info = gr.Markdown("載入中…", elem_classes=["apg-page-info"])
-                    following = gr.Button("下一頁", min_width=90)
+                    previous = gr.Button("Previous", min_width=90)
+                    page_info = gr.Markdown("Loading…", elem_classes=["apg-page-info"])
+                    following = gr.Button("Next", min_width=90)
 
             with gr.Column(scale=2, min_width=320, elem_classes=["apg-inspector"]):
                 selected_image = gr.Image(
-                    label="選中素材",
+                    label="Selected reference",
                     type="pil",
                     height=360,
                     interactive=False,
                     show_download_button=True,
                     elem_classes=["apg-selected-image"],
                 )
-                selection_details = gr.Textbox(label="素材資訊", lines=3, interactive=False)
+                selection_details = gr.Textbox(label="Reference details", lines=3, interactive=False)
                 prompt = gr.Textbox(
-                    label="提示詞",
+                    label="Prompt",
                     lines=5,
-                    placeholder="選取素材後會產生可編輯的提示詞",
+                    placeholder="Select a reference to generate an editable prompt",
                     show_copy_button=True,
                 )
-                send_controlnet = gr.Button("送到 txt2img＋ControlNet 1", variant="primary")
-                send_img2img = gr.Button("送到 img2img", variant="secondary")
-                send_prompt = gr.Button("只送提示詞到 txt2img", variant="secondary")
+                send_controlnet = gr.Button("Send to txt2img + ControlNet 1", variant="primary")
+                send_img2img = gr.Button("Send to img2img", variant="secondary")
+                send_prompt = gr.Button("Append prompt to txt2img", variant="secondary")
                 gr.Markdown(
-                    "Depth 圖會使用 `None` 預處理器；普通姿勢圖會預選 `dw_openpose_full`。ControlNet 模型仍由你選擇。",
+                    "Depth images use the `None` preprocessor. Regular pose images preselect `dw_openpose_full`. Choose the ControlNet model separately.",
                     elem_classes=["apg-help"],
                 )
 
@@ -402,7 +470,7 @@ def _gallery_ui():
         refresh_inputs = [library, search, primary, secondary, safe_mode, use_depth, page]
 
         interface.load(
-            fn=lambda: _refresh("姿勢", "", "全部", "全部", True, False, 1),
+            fn=lambda: _refresh("Poses", "", "All", "All", True, False, 1),
             outputs=outputs,
             show_progress=False,
         )
@@ -443,23 +511,21 @@ def _gallery_ui():
             infotext_utils.ParamBinding(
                 paste_button=send_img2img,
                 tabname="img2img",
-                source_text_component=prompt,
                 source_image_component=selected_image,
             )
         )
-        infotext_utils.register_paste_params_button(
-            infotext_utils.ParamBinding(
-                paste_button=send_prompt,
-                tabname="txt2img",
-                source_text_component=prompt,
-            )
+
+        send_img2img.click(
+            fn=None,
+            inputs=[prompt],
+            js="(text) => appendPoseGalleryPrompt(text, 'img2img')",
+            show_progress=False,
         )
-        infotext_utils.register_paste_params_button(
-            infotext_utils.ParamBinding(
-                paste_button=send_controlnet,
-                tabname="txt2img",
-                source_text_component=prompt,
-            )
+        send_prompt.click(
+            fn=None,
+            inputs=[prompt],
+            js="(text) => appendPoseGalleryPrompt(text, 'txt2img')",
+            show_progress=False,
         )
 
         try:
@@ -475,11 +541,15 @@ def _gallery_ui():
                 inputs=[selected_path, library, use_depth],
                 outputs=[target.image.background, target.enabled, target.module],
                 show_progress=False,
+            ).then(
+                fn=None,
+                inputs=[prompt],
+                js="(text) => appendPoseGalleryPrompt(text, 'txt2img')",
             )
         else:
             send_controlnet.interactive = False
 
-    return [(interface, "AI 姿勢圖庫", "ai-pose-gallery")]
+    return [(interface, "AI Pose Gallery", "ai-pose-gallery")]
 
 
 script_callbacks.on_ui_tabs(_gallery_ui)
