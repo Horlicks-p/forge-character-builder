@@ -152,6 +152,7 @@ def build_builder_tab(
                         pose_category = gr.Dropdown([session.ALL], value=session.ALL, label="Category")
                     with gr.Row():
                         pose_mode = gr.Radio(POSE_MODES, value="Normal", label="Control image")
+                        pose_angle = gr.Radio([], value=None, label="View angle", interactive=False, visible=False)
                         pose_clear = gr.Button("Clear pose", scale=0, min_width=110)
                     pose_gallery = gr.Gallery(
                         label="Poses",
@@ -215,6 +216,7 @@ def build_builder_tab(
         outfit_raw,
         pose_summary,
         pose_preview,
+        pose_angle,
         send_pose_button,
         send_all_button,
     ]
@@ -223,6 +225,8 @@ def build_builder_tab(
         update = session.regenerate(ctx, sel, final, last, bool(safe), force=force)
         outfit_md, raw = session.outfit_summary(ctx, sel)
         pose_md, preview = session.pose_summary(ctx, sel)
+        angles = session.pose_angle_choices(ctx, sel)
+        selected_angle = sel.pose.item_id if sel.pose is not None else None
         can_send = controlnet_ok and sel.pose is not None
         return {
             selection: sel,
@@ -237,6 +241,12 @@ def build_builder_tab(
             outfit_raw: raw,
             pose_summary: pose_md,
             pose_preview: preview,
+            pose_angle: gr.update(
+                choices=angles,
+                value=selected_angle if selected_angle in {item_id for _, item_id in angles} else None,
+                visible=bool(angles),
+                interactive=len(angles) > 1,
+            ),
             send_pose_button: gr.update(interactive=can_send),
             send_all_button: gr.update(interactive=can_send),
         }
@@ -390,6 +400,14 @@ def build_builder_tab(
         return view(sel.with_changes(pose=chosen, pose_mode="depth" if mode == "Depth" else "normal"), final, last, safe)
 
     pose_pick.change(pick_pose, [pose_pick, pose_ids, pose_mode, selection, *prompt_inputs], view_outputs, show_progress=False)
+
+    def change_pose_angle(item_id, sel, final, last, safe):
+        updated = session.select_pose_angle(ctx, sel, item_id)
+        return view(updated, final, last, safe)
+
+    pose_angle.change(
+        change_pose_angle, [pose_angle, selection, *prompt_inputs], view_outputs, show_progress=False
+    )
 
     def change_pose_mode(mode, sel, final, last, safe):
         return view(sel.with_changes(pose_mode="depth" if mode == "Depth" else "normal"), final, last, safe)
