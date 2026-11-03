@@ -97,6 +97,8 @@ def _render_gallery(
         return [], [], 1, "Gallery data was not found. Install the original ai-pose-gallery-zh dataset."
 
     items = _filtered_items(label, query, primary, secondary, safe_mode)
+    if label == "Poses":
+        items = anhao.pose_group_representatives(items)
     total_pages = max(1, (len(items) + PAGE_SIZE - 1) // PAGE_SIZE)
     page = max(1, min(int(page or 1), total_pages))
     start = (page - 1) * PAGE_SIZE
@@ -108,7 +110,8 @@ def _render_gallery(
         path = _asset_path(label, item, thumbnail=True, use_depth=bool(use_depth))
         if not path.is_file():
             continue
-        gallery.append((str(path), _caption(label, item)))
+        caption = anhao.pose_group_caption(GALLERY_ROOT, item) if label == "Poses" else _caption(label, item)
+        gallery.append((str(path), caption))
         ids.append(str(item.get("id", "")))
 
     info = f"Page {page} of {total_pages} · {len(items):,} items"
@@ -202,29 +205,67 @@ def _preview(label: str, item: dict, use_depth: bool):
     return image, details
 
 
+def _legacy_angle_update(ref: str):
+    parsed = _parse_selection_ref(ref)
+    if parsed is None or parsed[0] != "Poses":
+        return gr.update(choices=[], value=None, visible=False, interactive=False)
+    _, item = parsed
+    choices = [
+        (_english_value(view.get("角度", "")) or str(view.get("id", "")), str(view.get("id", "")))
+        for view in anhao.pose_views(GALLERY_ROOT, item)
+    ]
+    return gr.update(
+        choices=choices, value=str(item.get("id", "")),
+        visible=bool(choices), interactive=len(choices) > 1,
+    )
+
+
+def _clear_legacy_selection():
+    return None, "", "", "No item selected", _legacy_angle_update("")
+
+
+def _switch_legacy_angle(ref: str, item_id: str, use_depth: bool, safe_mode: bool):
+    parsed = _parse_selection_ref(ref)
+    if parsed is None or parsed[0] != "Poses" or not item_id:
+        return gr.update(), gr.update(), gr.update(), gr.update()
+    _, current = parsed
+    variants = {str(item.get("id", "")): item for item in anhao.pose_views(GALLERY_ROOT, current)}
+    chosen = variants.get(str(item_id))
+    if chosen is None or (safe_mode and _is_nsfw("Poses", chosen)):
+        return gr.update(), gr.update(), gr.update(), gr.update()
+    image, details = _preview("Poses", chosen, use_depth)
+    if image is None:
+        return None, "", "", details
+    return image, _selection_ref("Poses", chosen), _prompt_for("Poses", chosen), details
+
+
 def _select_item(label: str, use_depth: bool, item_ids: list[str], evt: gr.SelectData):
     if not item_ids or evt.index is None or evt.index >= len(item_ids):
-        return None, "", "", "No item selected"
+        return _clear_legacy_selection()
 
     item = _find_item(label, item_ids[evt.index])
     if item is None:
-        return None, "", "", "The selected item could not be found"
+        return None, "", "", "The selected item could not be found", _legacy_angle_update("")
 
     image, details = _preview(label, item, use_depth)
     if image is None:
-        return None, "", "", details
-    return image, _selection_ref(label, item), _prompt_for(label, item), details
+        return None, "", "", details, _legacy_angle_update("")
+    ref = _selection_ref(label, item)
+    return image, ref, _prompt_for(label, item), details, _legacy_angle_update(ref)
 
 
 def _random_item(label, query, primary, secondary, safe_mode, use_depth):
     items = _filtered_items(label, query, primary, secondary, safe_mode)
+    if label == "Poses":
+        items = anhao.pose_group_representatives(items)
     if not items:
-        return None, "", "", "No items match the current filters"
+        return None, "", "", "No items match the current filters", _legacy_angle_update("")
     item = random.choice(items)
     image, details = _preview(label, item, use_depth)
     if image is None:
-        return None, "", "", "The randomly selected image is missing"
-    return image, _selection_ref(label, item), _prompt_for(label, item), details
+        return None, "", "", "The randomly selected image is missing", _legacy_angle_update("")
+    ref = _selection_ref(label, item)
+    return image, ref, _prompt_for(label, item), details, _legacy_angle_update(ref)
 
 
 def _refresh_preview(ref: str, use_depth: bool):
@@ -342,6 +383,9 @@ def _gallery_ui():
                             following = gr.Button("Next", min_width=90)
 
                     with gr.Column(scale=2, min_width=320, elem_classes=["fcb-inspector"]):
+                        pose_view = gr.Radio(
+                            [], value=None, label="Pose view", visible=False, interactive=False
+                        )
                         selected_image = gr.Image(
                             label="Selected reference",
                             type="pil",
@@ -369,6 +413,7 @@ def _gallery_ui():
 
                 outputs = [gallery, item_ids, page, page_info, primary, secondary, use_depth]
                 refresh_inputs = [library, search, primary, secondary, safe_mode, use_depth, page]
+                legacy_selection_outputs = [selected_image, selected_ref, prompt, selection_details, pose_view]
 
                 interface.load(
                     fn=lambda: _refresh("Poses", "", "All", "All", True, False, 1),
@@ -380,7 +425,7 @@ def _gallery_ui():
                     inputs=[library, search, safe_mode, use_depth],
                     outputs=outputs,
                     show_progress=False,
-                )
+                ).then(fn=_clear_legacy_selection, outputs=legacy_selection_outputs, show_progress=False)
                 search.submit(fn=_reset_page, inputs=refresh_inputs, outputs=outputs, show_progress=False)
                 search_button.click(fn=_reset_page, inputs=refresh_inputs, outputs=outputs, show_progress=False)
                 primary.change(fn=_reset_page, inputs=refresh_inputs, outputs=outputs, show_progress=False)
@@ -405,12 +450,18 @@ def _gallery_ui():
                 gallery.select(
                     fn=_select_item,
                     inputs=[library, use_depth, item_ids],
-                    outputs=[selected_image, selected_ref, prompt, selection_details],
+                    outputs=legacy_selection_outputs,
                     show_progress=False,
                 )
                 random_button.click(
                     fn=_random_item,
                     inputs=[library, search, primary, secondary, safe_mode, use_depth],
+                    outputs=legacy_selection_outputs,
+                    show_progress=False,
+                )
+                pose_view.change(
+                    fn=_switch_legacy_angle,
+                    inputs=[selected_ref, pose_view, use_depth, safe_mode],
                     outputs=[selected_image, selected_ref, prompt, selection_details],
                     show_progress=False,
                 )
