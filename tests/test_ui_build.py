@@ -62,6 +62,29 @@ class UIBuildTests(unittest.TestCase):
         self.assertEqual(self._choices(config, "Library"), ["Poses", "Outfits", "Portraits"])
         self.assertNotIn("anhao_outfit", self._choices(config, "Source"))
 
+    def test_stale_selection_handlers_are_wired(self):
+        _, config = self._serve(with_controlnet=True)
+        by_label, by_elem = {}, {}
+        for component in config["components"]:
+            props = component.get("props", {})
+            by_label.setdefault(props.get("label"), []).append(component["id"])
+            if props.get("elem_id"):
+                by_elem[props["elem_id"]] = component["id"]
+
+        def wired(trigger_label, output_id):
+            triggers = set(by_label[trigger_label])
+            return any(
+                output_id in dep["outputs"] and any(t in triggers and e == "change" for t, e in dep["targets"])
+                for dep in config["dependencies"]
+            )
+
+        # Outfit source switch regenerates the selection and Final Prompt.
+        self.assertTrue(wired("Source", by_elem["fcb_final_prompt"]))
+        # Normal/Depth toggle refreshes the legacy preview to what will be sent.
+        self.assertTrue(wired("Use depth image", by_label["Selected reference"][0]))
+        # Builder Safe mode still drives the status (where the notices appear).
+        self.assertTrue(wired("Safe mode (hide 18+)", by_elem["fcb_status"]))
+
     def _legacy_script(self):
         from forge_harness import build_demo
 
