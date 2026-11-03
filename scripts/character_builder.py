@@ -9,9 +9,14 @@ from PIL import Image, ImageOps
 
 from modules import infotext_utils, script_callbacks
 
+try:
+    from modules import shared
+except ImportError:  # pragma: no cover - only outside Forge
+    shared = None
+
 # Forge Neo adds the extension root to sys.path, so the shared core package
 # (kept outside scripts/ so Forge does not load it as a script) imports directly.
-from character_builder_core import anhao, charadb_adapter, session
+from character_builder_core import anhao, charadb_adapter, session, sources
 from character_builder_ui.builder_tab import build_builder_tab
 
 
@@ -27,6 +32,39 @@ _is_nsfw = anhao.is_nsfw
 _item_title = anhao.item_title
 _prompt_for = anhao.prompt_for
 _caption = anhao.caption
+
+
+OPTIONS_SECTION = ("forge_character_builder", "Forge Character Builder")
+OPT_SHOW_PORTRAITS = "fcb_show_portraits"
+OPT_SHOW_ANHAO_OUTFITS = "fcb_show_anhao_outfits"
+OPTION_DEFAULTS = {OPT_SHOW_PORTRAITS: False, OPT_SHOW_ANHAO_OUTFITS: True}
+
+
+def _option(key: str) -> bool:
+    """Read a setting; unregistered or missing options fall back to the default."""
+    default = OPTION_DEFAULTS[key]
+    opts = getattr(shared, "opts", None)
+    try:
+        return bool(getattr(opts, key, default)) if opts is not None else default
+    except Exception:
+        return default
+
+
+def _on_ui_settings():
+    shared.opts.add_option(
+        OPT_SHOW_PORTRAITS,
+        shared.OptionInfo(False, "Show the Portraits library in the Pose Gallery tab", section=OPTIONS_SECTION).needs_reload_ui(),
+    )
+    shared.opts.add_option(
+        OPT_SHOW_ANHAO_OUTFITS,
+        shared.OptionInfo(
+            True, "Offer Anhao (Original) outfits as a Character Builder outfit source", section=OPTIONS_SECTION
+        ).needs_reload_ui(),
+    )
+
+
+def _visible_libraries() -> list[str]:
+    return [label for label in LIBRARIES if label != "Portraits" or _option(OPT_SHOW_PORTRAITS)]
 
 
 def _load_library(label: str) -> tuple[dict, ...]:
@@ -199,15 +237,15 @@ def _builder_context() -> session.BuilderContext:
 
 def _reference_count(ctx: session.BuilderContext) -> int:
     charadb_count = sum(len(ctx.charadb.list_kind(kind)) for kind in ctx.charadb.by_kind if kind != "pose")
-    return charadb_count + sum(anhao.library_count(GALLERY_ROOT, label) for label in LIBRARIES)
+    return charadb_count + sum(anhao.library_count(GALLERY_ROOT, label) for label in _visible_libraries())
 
 
 def _gallery_ui():
-    source_status = (
-        f"Data source: {GALLERY_ROOT}"
-        if GALLERY_ROOT is not None
-        else "Gallery data is not installed. Follow the README to add the ai-pose-gallery-zh dataset."
-    )
+    libraries = _visible_libraries()
+    legacy_health = sources.anhao_health(GALLERY_ROOT, libraries=libraries)
+    source_status = sources.render_markdown([legacy_health])
+    if GALLERY_ROOT is not None:
+        source_status += f"  \nData folder: `{GALLERY_ROOT}`"
     target = _find_controlnet_target()
     ctx = _builder_context()
 
@@ -226,11 +264,13 @@ def _gallery_ui():
 
         with gr.Tabs():
             with gr.Tab("Character Builder"):
-                builder_load, builder_outputs = build_builder_tab(ctx, target)
+                builder_load, builder_outputs = build_builder_tab(
+                    ctx, target, show_anhao_outfits=_option(OPT_SHOW_ANHAO_OUTFITS)
+                )
 
             with gr.Tab("Pose Gallery"):
                 with gr.Row(elem_classes=["fcb-toolbar"]):
-                    library = gr.Radio(list(LIBRARIES), value="Poses", label="Library", elem_classes=["fcb-library"])
+                    library = gr.Radio(libraries, value="Poses", label="Library", elem_classes=["fcb-library"])
                     search = gr.Textbox(label="Search", placeholder="Category, type, or ID", scale=3)
                     search_button = gr.Button("Search", variant="secondary", scale=0, min_width=90)
                     random_button = gr.Button("Random pick", variant="secondary", scale=0, min_width=110)
@@ -372,4 +412,6 @@ def _gallery_ui():
 
 
 script_callbacks.on_ui_tabs(_gallery_ui)
+if shared is not None and hasattr(script_callbacks, "on_ui_settings"):
+    script_callbacks.on_ui_settings(_on_ui_settings)
 

@@ -11,7 +11,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Iterable, Optional
 
-from . import anhao
+from . import anhao, sources
 from .assets import PLACEHOLDER_IMAGE
 from .builder import build_character_prompt
 from .charadb_adapter import SOURCE_ID as CHARADB_SOURCE
@@ -66,16 +66,29 @@ class BuilderContext:
             choices.append((OUTFIT_SOURCE_LABELS[anhao.OUTFIT_SOURCE], anhao.OUTFIT_SOURCE))
         return choices
 
-    def status_lines(self) -> list[str]:
-        lines = [self.charadb.message]
-        if self.anhao_root is None:
-            lines.append("Anhao pose data is not installed (see README).")
-        else:
-            lines.append(
-                f"Anhao: {anhao.library_count(self.anhao_root, 'Poses'):,} poses, "
-                f"{anhao.library_count(self.anhao_root, 'Outfits'):,} outfits"
-            )
-        return lines
+    def source_health(self) -> list[sources.SourceHealth]:
+        return [sources.charadb_health(self.charadb), sources.anhao_health(self.anhao_root)]
+
+    def hairstyle_hint(self) -> str:
+        """Empty-state text for Step 1; ``""`` when CharaDB is usable."""
+        if self.charadb.available:
+            return ""
+        return "**No hair or eye options.** " + sources.CHARADB_HINT
+
+    def outfit_hint(self, show_anhao: bool = True) -> str:
+        """Empty-state text for Step 2; ``""`` when an outfit source exists."""
+        if self.outfit_source_choices(show_anhao):
+            return ""
+        text = "**No outfit source is available.** " + sources.CHARADB_HINT
+        if not show_anhao and anhao.library_count(self.anhao_root, "Outfits"):
+            text += " Anhao outfits are installed but hidden: enable them in *Settings → Forge Character Builder*."
+        return text
+
+    def pose_hint(self) -> str:
+        """Empty-state text for Step 3; ``""`` when poses are installed."""
+        if self.poses_available:
+            return ""
+        return "**No poses.** Send Pose and Send All need the Anhao dataset. " + sources.ANHAO_HINT
 
 
 @dataclass(frozen=True)

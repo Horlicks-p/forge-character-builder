@@ -219,3 +219,11 @@
 #tab_forge-character-builder .fcb-hidden {
   display: none !important;
 }
+
+#tab_forge-character-builder .fcb-hint {
+  background: color-mix(in srgb, var(--fcb-coral) 9%, transparent);
+  border-left: 3px solid var(--fcb-coral);
+  border-radius: 4px;
+  font-size: 0.85rem;
+  padding: 0.45rem 0.7rem;
+}

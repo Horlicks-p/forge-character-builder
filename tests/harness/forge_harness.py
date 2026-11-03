@@ -52,7 +52,7 @@ class FakeControlNetGroup:
         FakeControlNetGroup.all_ui_groups.append(self)
 
 
-def _install_stubs(with_controlnet: bool) -> list:
+def _install_stubs(with_controlnet: bool, options: dict) -> list:
     callbacks: list = []
     modules = types.ModuleType("modules")
     script_callbacks = types.ModuleType("modules.script_callbacks")
@@ -60,8 +60,18 @@ def _install_stubs(with_controlnet: bool) -> list:
     infotext_utils = types.ModuleType("modules.infotext_utils")
     infotext_utils.ParamBinding = lambda **kwargs: kwargs
     infotext_utils.register_paste_params_button = lambda binding: None
-    modules.script_callbacks, modules.infotext_utils = script_callbacks, infotext_utils
-    sys.modules.update({"modules": modules, "modules.script_callbacks": script_callbacks, "modules.infotext_utils": infotext_utils})
+    script_callbacks.on_ui_settings = lambda callback: None
+    shared = types.ModuleType("modules.shared")
+    shared.opts = types.SimpleNamespace(**options)
+    modules.script_callbacks, modules.infotext_utils, modules.shared = script_callbacks, infotext_utils, shared
+    sys.modules.update(
+        {
+            "modules": modules,
+            "modules.script_callbacks": script_callbacks,
+            "modules.infotext_utils": infotext_utils,
+            "modules.shared": shared,
+        }
+    )
 
     for name in [n for n in sys.modules if n.startswith("lib_controlnet")]:
         del sys.modules[name]
@@ -106,10 +116,11 @@ def make_demo_dataset(root: Path) -> Path:
     return root
 
 
-def build_demo(*, with_controlnet: bool = True) -> gr.Blocks:
+def build_demo(*, with_controlnet: bool = True, options: dict | None = None) -> gr.Blocks:
+    """``options`` mimics Forge settings, e.g. ``{"fcb_show_portraits": True}``."""
     if not os.environ.get("ANHAO_GALLERY_ROOT"):
         os.environ["ANHAO_GALLERY_ROOT"] = str(make_demo_dataset(Path(tempfile.mkdtemp(prefix="fcb-anhao-"))))
-    callbacks = _install_stubs(with_controlnet)
+    callbacks = _install_stubs(with_controlnet, dict(options or {}))
     FakeControlNetGroup.all_ui_groups.clear()
     if str(ROOT) not in sys.path:
         sys.path.insert(0, str(ROOT))  # what Forge Neo does for each extension root
@@ -150,5 +161,8 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--port", type=int, default=7861)
     parser.add_argument("--no-controlnet", action="store_true")
+    parser.add_argument("--show-portraits", action="store_true")
+    parser.add_argument("--hide-anhao-outfits", action="store_true")
     args = parser.parse_args()
-    build_demo(with_controlnet=not args.no_controlnet).launch(server_port=args.port)
+    options = {"fcb_show_portraits": args.show_portraits, "fcb_show_anhao_outfits": not args.hide_anhao_outfits}
+    build_demo(with_controlnet=not args.no_controlnet, options=options).launch(server_port=args.port)

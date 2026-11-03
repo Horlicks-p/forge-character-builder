@@ -8,7 +8,7 @@ import gradio as gr
 import numpy as np
 from PIL import Image, ImageOps
 
-from character_builder_core import anhao, session
+from character_builder_core import anhao, session, sources
 from character_builder_core.charadb_adapter import SOURCE_ID as CHARADB_SOURCE
 from character_builder_core.models import (
     KIND_BANGS,
@@ -33,6 +33,11 @@ def _parse_pick(value) -> Optional[int]:
         return int(str(value or "").split(":", 1)[0])
     except ValueError:
         return None
+
+
+def _hint(text: str) -> None:
+    if text:
+        gr.Markdown(text, elem_classes=["fcb-hint"])
 
 
 def _pick_box(gallery_id: str):
@@ -74,12 +79,15 @@ def build_builder_tab(
     with gr.Row(elem_classes=["fcb-builder-options"]):
         safe_mode = gr.Checkbox(value=True, label="Safe mode (hide 18+)")
         include_subject = gr.Checkbox(value=False, label="Add 1girl, solo")
-    gr.Markdown("  \n".join(ctx.status_lines()), elem_classes=["fcb-source-status"])
+    health = ctx.source_health()
+    with gr.Accordion("Data sources", open=not sources.all_ok(health), elem_classes=["fcb-source-status"]):
+        gr.Markdown(sources.render_markdown(health))
 
     with gr.Row(elem_classes=["fcb-builder"]):
         with gr.Column(scale=3, elem_classes=["fcb-builder-steps"]):
             with gr.Tabs():
                 with gr.Tab("1 · Character"):
+                    _hint(ctx.hairstyle_hint())
                     hair_summary = gr.Markdown("Hairstyle: *none*")
                     with gr.Row():
                         hair_search = gr.Textbox(label="Search hairstyles", placeholder="e.g. twintails, bob, H010", scale=3)
@@ -109,6 +117,7 @@ def build_builder_tab(
                         eye_shape = gr.Dropdown(session.dropdown_choices(ctx, KIND_EYE_SHAPE), value="", label="Eye shape", filterable=True)
 
                 with gr.Tab("2 · Outfit"):
+                    _hint(ctx.outfit_hint(show_anhao_outfits))
                     outfit_summary = gr.Markdown("Outfit: *none*")
                     with gr.Row():
                         outfit_source = gr.Radio(outfit_sources, value=default_outfit_source or None, label="Source")
@@ -135,6 +144,7 @@ def build_builder_tab(
                     outfit_raw = gr.Textbox(label="Raw source tags (read-only)", interactive=False, lines=2)
 
                 with gr.Tab("3 · Pose"):
+                    _hint(ctx.pose_hint())
                     pose_summary = gr.Markdown("Pose: *none*")
                     with gr.Row():
                         pose_search = gr.Textbox(label="Search poses", placeholder="Category, angle, or ID", scale=2)

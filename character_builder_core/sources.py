@@ -1,0 +1,115 @@
+"""Data source health for the UI: what is installed, what is missing and how
+to fix it. Pure Python; every probe is cheap (file checks, cached loads) and
+never raises, so a broken source only degrades its own part of the UI.
+"""
+
+from __future__ import annotations
+
+import json
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Iterable, Optional
+
+from . import anhao
+from .charadb_adapter import CharaDBCatalog
+
+OK = "ok"
+PARTIAL = "partial"
+MISSING = "missing"
+ERROR = "error"
+
+_ICONS = {OK: "✅", PARTIAL: "⚠️", MISSING: "⛔", ERROR: "❌"}
+
+CHARADB_HINT = (
+    "Extract the CharaDB release zip into `extensions/forge-character-builder/vendor/charadb/` "
+    "(it needs `data.js` or `items_public.json`; `thumb/` adds previews), "
+    "or set the `CHARADB_ROOT` environment variable to that folder."
+)
+CHARADB_PREVIEW_HINT = "Add the release's `thumb/` folder next to the index to show previews."
+ANHAO_HINT = (
+    "Copy the ai-pose-gallery-zh dataset into `extensions/forge-character-builder/vendor/` "
+    "so that `vendor/data/pose-zh.json` exists, put it next to this extension as "
+    "`extensions/ai-pose-gallery-zh/`, or set the `ANHAO_GALLERY_ROOT` environment variable."
+)
+ANHAO_IMAGES_HINT = "The dataset's `img/` and `thumbs/` folders are needed for thumbnails and ControlNet."
+
+
+@dataclass(frozen=True)
+class SourceHealth:
+    name: str
+    state: str
+    detail: str
+    hint: str = ""
+
+    @property
+    def ok(self) -> bool:
+        return self.state == OK
+
+
+@dataclass(frozen=True)
+class LibraryProbe:
+    count: int
+    error: str = ""
+
+
+def probe_library(root: Optional[Path], label: str) -> LibraryProbe:
+    """Uncached check of one Anhao library file that says *why* it is empty.
+
+    ``anhao.load_library`` keeps returning ``()`` on any problem; this sibling
+    exists only so the status panel can tell missing, unreadable and empty apart.
+    """
+    if root is None:
+        return LibraryProbe(0, "dataset not found")
+    path = Path(root) / "data" / anhao.LIBRARIES[label]["file"]
+    if not path.is_file():
+        return LibraryProbe(0, f"`data/{path.name}` is missing")
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as error:
+        return LibraryProbe(0, f"`data/{path.name}` could not be read ({type(error).__name__})")
+    if not isinstance(data, list):
+        return LibraryProbe(0, f"`data/{path.name}` is not a list")
+    return LibraryProbe(sum(1 for item in data if isinstance(item, dict)))
+
+
+def charadb_health(catalog: CharaDBCatalog) -> SourceHealth:
+    if catalog.available:
+        if catalog.image_root:
+            return SourceHealth("CharaDB", OK, catalog.message)
+        return SourceHealth("CharaDB", PARTIAL, catalog.message, CHARADB_PREVIEW_HINT)
+    if catalog.path is None:
+        return SourceHealth("CharaDB", MISSING, "CharaDB not installed — hair, eye and CharaDB outfit options are unavailable.", CHARADB_HINT)
+    return SourceHealth("CharaDB", ERROR, catalog.message, CHARADB_HINT)
+
+
+def anhao_health(root: Optional[Path], *, libraries: Iterable[str] = ("Poses", "Outfits")) -> SourceHealth:
+    if root is None:
+        return SourceHealth("Anhao", MISSING, "Anhao not installed — poses and Anhao outfits are unavailable.", ANHAO_HINT)
+    parts, problems = [], []
+    for label in libraries:
+        probe = probe_library(root, label)
+        if probe.error:
+            problems.append(f"{label}: {probe.error}")
+        else:
+            parts.append(f"{probe.count:,} {label.lower()}")
+    missing_dirs = [name for name in ("img", "thumbs") if not (Path(root) / name).is_dir()]
+    detail = "Anhao: " + (", ".join(parts) if parts else "no usable libraries")
+    if problems:
+        return SourceHealth("Anhao", ERROR, detail + " · " + "; ".join(problems), ANHAO_HINT)
+    if missing_dirs:
+        folders = ", ".join(f"`{name}/`" for name in missing_dirs)
+        return SourceHealth("Anhao", PARTIAL, f"{detail} · missing {folders}", ANHAO_IMAGES_HINT)
+    return SourceHealth("Anhao", OK, detail)
+
+
+def render_markdown(rows: Iterable[SourceHealth]) -> str:
+    lines = []
+    for row in rows:
+        lines.append(f"{_ICONS.get(row.state, '•')} {row.detail}")
+        if row.hint and not row.ok:
+            lines.append(f"&nbsp;&nbsp;&nbsp;&nbsp;↳ {row.hint}")
+    return "  \n".join(lines)
+
+
+def all_ok(rows: Iterable[SourceHealth]) -> bool:
+    return all(row.ok for row in rows)

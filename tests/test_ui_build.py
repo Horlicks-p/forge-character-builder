@@ -36,6 +36,26 @@ class UIBuildTests(unittest.TestCase):
         self.assertIn("Send All", values)
         self.assertGreater(len(config["dependencies"]), 40)
 
+    @staticmethod
+    def _choices(config, label):
+        for component in config["components"]:
+            props = component.get("props", {})
+            if props.get("label") == label:
+                return [choice[1] if isinstance(choice, (list, tuple)) else choice for choice in props.get("choices", [])]
+        raise AssertionError(f"no component labelled {label!r}")
+
+    def test_portraits_hidden_by_default(self):
+        _, config = self._serve(with_controlnet=True)
+        self.assertEqual(self._choices(config, "Library"), ["Poses", "Outfits"])
+        self.assertIn("anhao_outfit", self._choices(config, "Source"))
+        texts = " ".join(str(c.get("props", {}).get("label")) for c in config["components"])
+        self.assertIn("Data sources", texts)
+
+    def test_settings_toggle_portraits_and_anhao_outfits(self):
+        _, config = self._serve(with_controlnet=True, options={"fcb_show_portraits": True, "fcb_show_anhao_outfits": False})
+        self.assertEqual(self._choices(config, "Library"), ["Poses", "Outfits", "Portraits"])
+        self.assertNotIn("anhao_outfit", self._choices(config, "Source"))
+
     def test_builds_without_controlnet(self):
         _, config = self._serve(with_controlnet=False)
         texts = " ".join(str(c.get("props", {}).get("value")) for c in config["components"])
