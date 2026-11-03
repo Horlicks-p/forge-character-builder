@@ -36,7 +36,7 @@ class UIBuildTests(unittest.TestCase):
         self.assertEqual(gradio.__version__, "4.40.0")
         _, config = self._serve(with_controlnet=True)
         labels = {c.get("props", {}).get("label") for c in config["components"]}
-        for label in ("Character Builder", "Pose Gallery", "Final Prompt (editable)", "Hair color", "Eye shape", "Hairstyles", "Outfits", "Poses"):
+        for label in ("Character Builder", "Pose Gallery", "Final Prompt (editable)", "Hair color", "Eye shape", "Hairstyles", "Outfits", "Poses", "View angle", "Pose view"):
             self.assertIn(label, labels)
         values = {str(c.get("props", {}).get("value")) for c in config["components"]}
         self.assertIn("Send All", values)
@@ -126,6 +126,20 @@ class UIBuildTests(unittest.TestCase):
         self.assertIn("Pose reference image", details)
         image, details = script._refresh_preview("", True)  # nothing selected: no change
         self.assertEqual((image, details), (gradio_update(), gradio_update()))
+
+    def test_pose_view_controls_are_user_input_only(self):
+        _, config = self._serve(with_controlnet=True)
+        controls = {
+            c["props"]["label"]: c["id"]
+            for c in config["components"]
+            if c.get("props", {}).get("label") in {"View angle", "Pose view"}
+        }
+        self.assertEqual(set(controls), {"View angle", "Pose view"})
+        for component_id in controls.values():
+            self.assertTrue(
+                any((component_id, "input") in dep.get("targets", []) for dep in config["dependencies"]),
+                f"no user-input event on angle control {component_id}",
+            )
 
     def test_builds_without_controlnet(self):
         _, config = self._serve(with_controlnet=False)
