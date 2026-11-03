@@ -12,6 +12,7 @@ Forge Classic 原生的中文姿勢、服裝與人物參考圖庫介面，搭配
 - 送到 `txt2img + ControlNet 1`
 - 送到 `img2img`
 - 將素材提示詞送到 `txt2img`
+- 服裝關鍵字依衣物詞組插入逗號，保留 `mini skirt`、`white sneakers` 等多字詞組
 
 ## 安裝
 
@@ -34,7 +35,7 @@ extensions/
 
 ## ControlNet 建議
 
-- 普通姿勢圖：擴充會預選 `dw_openpose_full`，模型請選 OpenPose ControlNet。
+- 普通姿勢圖：擴充會預選 `canny`，模型請選 Canny ControlNet（例如 xinsirControlnetCanny_v20）。
 - Depth 圖：擴充會預選 `None`，模型請選 Depth ControlNet。
 - 服裝與人物圖：適合送到 img2img，或自行搭配 Reference / IP-Adapter。
 
