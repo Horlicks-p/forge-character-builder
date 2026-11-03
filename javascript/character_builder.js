@@ -65,6 +65,35 @@ function replaceCharacterBuilderPrompt(text, tabname) {
     return "Prompt replaced";
 }
 
+// Gallery picks. Gradio only fires Gallery.select when the selected index
+// changes, so a slot could not be picked again after paging or Clear. Each
+// thumbnail click instead writes "<index>:<nonce>" into the gallery's hidden
+// "<gallery id>_pick" textbox, whose change event selects the item in Python.
+function characterBuilderPickFromClick(event) {
+    const target = event.target;
+    const thumb = target && target.closest ? target.closest(".fcb-gallery button.thumbnail-item") : null;
+    if (!thumb) {
+        return;
+    }
+    const gallery = thumb.closest(".fcb-gallery");
+    if (!gallery || !gallery.id) {
+        return;
+    }
+    const thumbs = Array.from(gallery.querySelectorAll("button.thumbnail-item"));
+    const index = thumbs.indexOf(thumb);
+    const box = gradioApp().querySelector(`#${gallery.id}_pick textarea, #${gallery.id}_pick input`);
+    if (index < 0 || !box) {
+        return;
+    }
+    box.value = `${index}:${Date.now()}`;
+    updateInput(box);
+}
+
+if (typeof document !== "undefined" && !window.__characterBuilderPickInstalled) {
+    window.__characterBuilderPickInstalled = true;
+    document.addEventListener("click", characterBuilderPickFromClick, true);
+}
+
 if (typeof module !== "undefined" && module.exports) {
     module.exports = { computeCharacterBuilderAppend };
 }

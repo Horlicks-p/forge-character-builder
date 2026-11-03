@@ -27,6 +27,21 @@ SEND_ALL_APPEND_JS = "(text) => 'Pose sent · ' + appendCharacterBuilderPrompt(t
 POSE_MODES = ["Normal", "Depth"]
 
 
+def _parse_pick(value) -> Optional[int]:
+    """Index from the hidden pick box (``"<index>:<nonce>"``, written by JS)."""
+    try:
+        return int(str(value or "").split(":", 1)[0])
+    except ValueError:
+        return None
+
+
+def _pick_box(gallery_id: str):
+    # Gradio only fires Gallery.select when the selected index changes, so a
+    # thumbnail could not be picked again after paging or Clear. The JS click
+    # handler writes "<index>:<nonce>" here instead, which always changes.
+    return gr.Textbox(value="", elem_id=f"{gallery_id}_pick", elem_classes=["fcb-hidden"], show_label=False, container=False)
+
+
 def _load_control_image(path) -> np.ndarray:
     try:
         image = ImageOps.exif_transpose(Image.open(path)).convert("RGB")
@@ -71,6 +86,7 @@ def build_builder_tab(
                         hair_clear = gr.Button("Clear hairstyle", scale=0, min_width=130)
                     hair_gallery = gr.Gallery(
                         label="Hairstyles",
+                        elem_id="fcb_hair_gallery",
                         columns=6,
                         height=420,
                         object_fit="contain",
@@ -79,6 +95,7 @@ def build_builder_tab(
                         show_share_button=False,
                         elem_classes=["fcb-gallery"],
                     )
+                    hair_pick = _pick_box("fcb_hair_gallery")
                     with gr.Row(elem_classes=["fcb-pagination"]):
                         hair_prev = gr.Button("Previous", min_width=90)
                         hair_info = gr.Markdown("", elem_classes=["fcb-page-info"])
@@ -101,6 +118,7 @@ def build_builder_tab(
                         outfit_clear = gr.Button("Clear outfit", scale=0, min_width=120)
                     outfit_gallery = gr.Gallery(
                         label="Outfits",
+                        elem_id="fcb_outfit_gallery",
                         columns=6,
                         height=420,
                         object_fit="contain",
@@ -109,6 +127,7 @@ def build_builder_tab(
                         show_share_button=False,
                         elem_classes=["fcb-gallery"],
                     )
+                    outfit_pick = _pick_box("fcb_outfit_gallery")
                     with gr.Row(elem_classes=["fcb-pagination"]):
                         outfit_prev = gr.Button("Previous", min_width=90)
                         outfit_info = gr.Markdown("", elem_classes=["fcb-page-info"])
@@ -126,6 +145,7 @@ def build_builder_tab(
                         pose_clear = gr.Button("Clear pose", scale=0, min_width=110)
                     pose_gallery = gr.Gallery(
                         label="Poses",
+                        elem_id="fcb_pose_gallery",
                         columns=6,
                         height=420,
                         object_fit="contain",
@@ -134,6 +154,7 @@ def build_builder_tab(
                         show_share_button=False,
                         elem_classes=["fcb-gallery"],
                     )
+                    pose_pick = _pick_box("fcb_pose_gallery")
                     with gr.Row(elem_classes=["fcb-pagination"]):
                         pose_prev = gr.Button("Previous", min_width=90)
                         pose_info = gr.Markdown("", elem_classes=["fcb-page-info"])
@@ -264,12 +285,13 @@ def build_builder_tab(
         set_slot("hair_color"), [hair_color, selection, *prompt_inputs], view_outputs, show_progress=False
     ).then(hair_gallery_update, [hair_search, hair_page, selection], hair_gallery_outputs, show_progress=False)
 
-    def select_hairstyle(ids, sel, final, last, safe, evt: gr.SelectData):
-        if evt.index is None or evt.index >= len(ids):
+    def pick_hairstyle(pick, ids, sel, final, last, safe):
+        index = _parse_pick(pick)
+        if index is None or not 0 <= index < len(ids):
             return view(sel, final, last, safe)
-        return view(sel.with_changes(hairstyle=ItemRef(CHARADB_SOURCE, ids[evt.index]), hairstyle_variant=None), final, last, safe)
+        return view(sel.with_changes(hairstyle=ItemRef(CHARADB_SOURCE, ids[index]), hairstyle_variant=None), final, last, safe)
 
-    hair_gallery.select(select_hairstyle, [hair_ids, selection, *prompt_inputs], view_outputs, show_progress=False)
+    hair_pick.change(pick_hairstyle, [hair_pick, hair_ids, selection, *prompt_inputs], view_outputs, show_progress=False)
     hair_clear.click(
         lambda sel, final, last, safe: view(sel.with_changes(hairstyle=None, hairstyle_variant=None), final, last, safe),
         [selection, *prompt_inputs],
@@ -310,12 +332,13 @@ def build_builder_tab(
         show_progress=False,
     )
 
-    def select_outfit(source, ids, sel, final, last, safe, evt: gr.SelectData):
-        if not source or evt.index is None or evt.index >= len(ids):
+    def pick_outfit(pick, source, ids, sel, final, last, safe):
+        index = _parse_pick(pick)
+        if not source or index is None or not 0 <= index < len(ids):
             return view(sel, final, last, safe)
-        return view(sel.with_changes(outfit=ItemRef(source, ids[evt.index])), final, last, safe)
+        return view(sel.with_changes(outfit=ItemRef(source, ids[index])), final, last, safe)
 
-    outfit_gallery.select(select_outfit, [outfit_source, outfit_ids, selection, *prompt_inputs], view_outputs, show_progress=False)
+    outfit_pick.change(pick_outfit, [outfit_pick, outfit_source, outfit_ids, selection, *prompt_inputs], view_outputs, show_progress=False)
     outfit_clear.click(
         lambda sel, final, last, safe: view(sel.with_changes(outfit=None), final, last, safe),
         [selection, *prompt_inputs],
@@ -343,13 +366,14 @@ def build_builder_tab(
         show_progress=False,
     )
 
-    def select_pose(ids, mode, sel, final, last, safe, evt: gr.SelectData):
-        if evt.index is None or evt.index >= len(ids):
+    def pick_pose(pick, ids, mode, sel, final, last, safe):
+        index = _parse_pick(pick)
+        if index is None or not 0 <= index < len(ids):
             return view(sel, final, last, safe)
-        chosen = ItemRef(anhao.POSE_SOURCE, ids[evt.index])
+        chosen = ItemRef(anhao.POSE_SOURCE, ids[index])
         return view(sel.with_changes(pose=chosen, pose_mode="depth" if mode == "Depth" else "normal"), final, last, safe)
 
-    pose_gallery.select(select_pose, [pose_ids, pose_mode, selection, *prompt_inputs], view_outputs, show_progress=False)
+    pose_pick.change(pick_pose, [pose_pick, pose_ids, pose_mode, selection, *prompt_inputs], view_outputs, show_progress=False)
 
     def change_pose_mode(mode, sel, final, last, safe):
         return view(sel.with_changes(pose_mode="depth" if mode == "Depth" else "normal"), final, last, safe)

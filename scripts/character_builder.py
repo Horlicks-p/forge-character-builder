@@ -341,13 +341,13 @@ def _gallery_ui():
                 send_img2img.click(
                     fn=None,
                     inputs=[prompt],
-                    js="(text) => appendCharacterBuilderPrompt(text, 'img2img')",
+                    js="(text) => { appendCharacterBuilderPrompt(text, 'img2img'); }",
                     show_progress=False,
                 )
                 send_prompt.click(
                     fn=None,
                     inputs=[prompt],
-                    js="(text) => appendCharacterBuilderPrompt(text, 'txt2img')",
+                    js="(text) => { appendCharacterBuilderPrompt(text, 'txt2img'); }",
                     show_progress=False,
                 )
 
@@ -361,7 +361,7 @@ def _gallery_ui():
                         # Only append the prompt after the ControlNet step succeeded.
                         fn=None,
                         inputs=[prompt],
-                        js="(text) => appendCharacterBuilderPrompt(text, 'txt2img')",
+                        js="(text) => { appendCharacterBuilderPrompt(text, 'txt2img'); }",
                     )
                 else:
                     send_controlnet.interactive = False

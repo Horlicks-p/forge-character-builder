@@ -119,9 +119,11 @@
   overflow: hidden;
 }
 
-#tab_forge-character-builder .fcb-gallery button.thumbnail-item.selected {
-  border-color: var(--fcb-coral) !important;
-  box-shadow: 0 0 0 2px color-mix(in srgb, var(--fcb-coral) 24%, transparent) !important;
+/* Gradio keeps a clicked thumbnail highlighted after paging or Clear, so the
+   highlight would point at the wrong item. The summary line above each
+   gallery shows the real selection; thumbnails only get a hover outline. */
+#tab_forge-character-builder .fcb-gallery button.thumbnail-item:hover {
+  border-color: color-mix(in srgb, var(--fcb-coral) 70%, transparent) !important;
 }
 
 #tab_forge-character-builder .fcb-gallery .caption-label {
@@ -169,6 +171,11 @@
 #tab_forge-character-builder button.primary {
   background: var(--fcb-coral);
   border-color: color-mix(in srgb, var(--fcb-coral) 80%, #000);
+  color: #fff;
+}
+
+#tab_forge-character-builder button.primary:disabled {
+  opacity: 0.55;
 }
 
 #tab_forge-character-builder :focus-visible {
@@ -208,5 +215,7 @@
   }
 }
 
-
-
+/* Hidden pick boxes written by javascript/character_builder.js */
+#tab_forge-character-builder .fcb-hidden {
+  display: none !important;
+}
