@@ -26,6 +26,7 @@ PAGE_SIZE = 48
 # Anhao data access lives in character_builder_core.anhao (shared with the
 # Character Builder). These thin wrappers keep the legacy call sites unchanged.
 GALLERY_ROOT = anhao.find_gallery_root(EXTENSION_ROOT)
+GALLERY_CANDIDATE = None if GALLERY_ROOT else anhao.find_gallery_candidate(EXTENSION_ROOT)
 LIBRARIES = anhao.LIBRARIES
 _english_value = anhao.english_value
 _is_nsfw = anhao.is_nsfw
@@ -232,7 +233,7 @@ def _find_controlnet_target():
 def _builder_context() -> session.BuilderContext:
     items_file = charadb_adapter.find_items_file(EXTENSION_ROOT)
     image_root = charadb_adapter.find_image_root(EXTENSION_ROOT)
-    return session.BuilderContext(charadb=charadb_adapter.load_catalog(items_file, image_root), anhao_root=GALLERY_ROOT)
+    return session.BuilderContext(charadb=charadb_adapter.load_catalog(items_file, image_root), anhao_root=GALLERY_ROOT, anhao_candidate=GALLERY_CANDIDATE)
 
 
 def _reference_count(ctx: session.BuilderContext) -> int:
@@ -242,7 +243,7 @@ def _reference_count(ctx: session.BuilderContext) -> int:
 
 def _gallery_ui():
     libraries = _visible_libraries()
-    legacy_health = sources.anhao_health(GALLERY_ROOT, libraries=libraries)
+    legacy_health = sources.anhao_health(GALLERY_ROOT, libraries=libraries, candidate=GALLERY_CANDIDATE)
     source_status = sources.render_markdown([legacy_health])
     if GALLERY_ROOT is not None:
         source_status += f"  \nData folder: `{GALLERY_ROOT}`"

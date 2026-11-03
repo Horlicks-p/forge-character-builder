@@ -132,6 +132,27 @@ def find_gallery_root(extension_root: Path, environ: Optional[Mapping[str, str]]
     return None
 
 
+def find_gallery_candidate(extension_root: Path, environ: Optional[Mapping[str, str]] = None) -> Optional[Path]:
+    """A folder that looks like an Anhao install attempt, usable or not.
+
+    Only for diagnostics when ``find_gallery_root`` returns ``None``: the
+    configured folder if it exists, ``vendor/`` if it has a ``data/`` folder,
+    or a sibling ``ai-pose-gallery-zh/`` folder.
+    """
+    environ = os.environ if environ is None else environ
+    configured = (environ.get("ANHAO_GALLERY_ROOT") or environ.get("AI_POSE_GALLERY_ROOT") or "").strip()
+    candidates = [Path(configured)] if configured else []
+    vendor = extension_root / "vendor"
+    if (vendor / "data").is_dir():
+        candidates.append(vendor)
+    candidates.append(extension_root.parent / "ai-pose-gallery-zh")
+    for candidate in candidates:
+        candidate = candidate.expanduser()
+        if candidate.is_dir():
+            return candidate.resolve()
+    return None
+
+
 @lru_cache(maxsize=12)
 def load_library(root: Optional[Path], label: str) -> tuple[dict, ...]:
     if root is None:

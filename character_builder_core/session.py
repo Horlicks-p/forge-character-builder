@@ -49,6 +49,8 @@ class BuilderContext:
     charadb: CharaDBCatalog
     anhao_root: Optional[Path]
     placeholder: Path = PLACEHOLDER_IMAGE
+    # Install attempt rejected by find_gallery_root (diagnostics only).
+    anhao_candidate: Optional[Path] = None
 
     @property
     def poses_available(self) -> bool:
@@ -67,7 +69,7 @@ class BuilderContext:
         return choices
 
     def source_health(self) -> list[sources.SourceHealth]:
-        return [sources.charadb_health(self.charadb), sources.anhao_health(self.anhao_root)]
+        return [sources.charadb_health(self.charadb), sources.anhao_health(self.anhao_root, candidate=self.anhao_candidate)]
 
     def hairstyle_hint(self) -> str:
         """Empty-state text for Step 1; ``""`` when CharaDB is usable."""

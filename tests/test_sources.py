@@ -77,9 +77,41 @@ class SourceHealthTests(unittest.TestCase):
         self.assertEqual(health.state, sources.PARTIAL)
         self.assertIn("`thumbs/`", health.detail)
 
-    def test_empty_library_is_not_an_error(self):
+    def test_one_empty_library_is_partial(self):
         (self.anhao_root / "data" / "costume-zh.json").write_text("[]", encoding="utf-8")
         self.assertEqual(sources.probe_library(self.anhao_root, "Outfits"), sources.LibraryProbe(0))
+        health = sources.anhao_health(self.anhao_root)
+        self.assertEqual(health.state, sources.PARTIAL)
+        self.assertEqual(health.detail, "Anhao: 4 poses, 0 outfits · empty: outfits")
+
+    def test_all_visible_libraries_empty_is_error(self):
+        for name in ("pose-zh.json", "costume-zh.json"):
+            (self.anhao_root / "data" / name).write_text("[]", encoding="utf-8")
+        health = sources.anhao_health(self.anhao_root)
+        self.assertEqual(health.state, sources.ERROR)
+        self.assertIn("every library is empty", health.detail)
+
+    def test_rejected_root_names_the_missing_pose_file(self):
+        (self.anhao_root / "data" / "pose-zh.json").unlink()
+        self.assertIsNone(anhao.find_gallery_root(self.tmp, {"ANHAO_GALLERY_ROOT": str(self.anhao_root)}))
+        candidate = anhao.find_gallery_candidate(self.tmp, {"ANHAO_GALLERY_ROOT": str(self.anhao_root)})
+        self.assertEqual(candidate, self.anhao_root)
+
+        health = sources.anhao_health(None, candidate=candidate)
+        self.assertEqual(health.state, sources.ERROR)
+        self.assertIn("`data/pose-zh.json` is missing", health.detail)
+        self.assertIn(str(self.anhao_root), health.detail)
+
+        ctx = session.BuilderContext(charadb=load_catalog(None), anhao_root=None, anhao_candidate=candidate)
+        self.assertIn("pose-zh.json", ctx.source_health()[1].detail)
+
+    def test_gallery_candidate_ignores_unrelated_folders(self):
+        ext = self.tmp / "extensions" / "forge-character-builder"
+        (ext / "vendor" / "charadb").mkdir(parents=True)  # vendor/ holding only CharaDB
+        self.assertIsNone(anhao.find_gallery_candidate(ext, {}))
+        self.assertIsNone(anhao.find_gallery_candidate(ext, {"ANHAO_GALLERY_ROOT": str(self.tmp / "nope")}))
+        (ext / "vendor" / "data").mkdir()
+        self.assertEqual(anhao.find_gallery_candidate(ext, {}), (ext / "vendor").resolve())
 
     # --- rendering -------------------------------------------------------------
 

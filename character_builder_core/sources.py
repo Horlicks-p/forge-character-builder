@@ -82,20 +82,42 @@ def charadb_health(catalog: CharaDBCatalog) -> SourceHealth:
     return SourceHealth("CharaDB", ERROR, catalog.message, CHARADB_HINT)
 
 
-def anhao_health(root: Optional[Path], *, libraries: Iterable[str] = ("Poses", "Outfits")) -> SourceHealth:
-    if root is None:
+ANHAO_DATA_HINT = "Copy the dataset's `data/*.json` files again; an empty library hides that part of the UI."
+
+
+def anhao_health(
+    root: Optional[Path],
+    *,
+    libraries: Iterable[str] = ("Poses", "Outfits"),
+    candidate: Optional[Path] = None,
+) -> SourceHealth:
+    """Health of the Anhao dataset.
+
+    ``root`` is the usable root (``anhao.find_gallery_root``); ``candidate``
+    is a folder that looks like an install attempt but was rejected (e.g. it
+    lacks ``data/pose-zh.json``), so the panel can name the missing file.
+    """
+    probe_root = root if root is not None else candidate
+    if probe_root is None:
         return SourceHealth("Anhao", MISSING, "Anhao not installed — poses and Anhao outfits are unavailable.", ANHAO_HINT)
-    parts, problems = [], []
-    for label in libraries:
-        probe = probe_library(root, label)
-        if probe.error:
-            problems.append(f"{label}: {probe.error}")
-        else:
-            parts.append(f"{probe.count:,} {label.lower()}")
-    missing_dirs = [name for name in ("img", "thumbs") if not (Path(root) / name).is_dir()]
-    detail = "Anhao: " + (", ".join(parts) if parts else "no usable libraries")
+
+    probes = {label: probe_library(probe_root, label) for label in libraries}
+    problems = [f"{label}: {probe.error}" for label, probe in probes.items() if probe.error]
+    readable = {label: probe.count for label, probe in probes.items() if not probe.error}
+    empty = [label for label, count in readable.items() if count == 0]
+    detail = "Anhao: " + (", ".join(f"{count:,} {label.lower()}" for label, count in readable.items()) or "no usable libraries")
+
+    if root is None:
+        reason = "; ".join(problems) or "`data/pose-zh.json` is missing"
+        return SourceHealth("Anhao", ERROR, f"Anhao folder `{candidate}` is not usable · {reason}", ANHAO_HINT)
     if problems:
         return SourceHealth("Anhao", ERROR, detail + " · " + "; ".join(problems), ANHAO_HINT)
+    if readable and len(empty) == len(readable):
+        return SourceHealth("Anhao", ERROR, detail + " · every library is empty", ANHAO_DATA_HINT)
+    if empty:
+        names = ", ".join(label.lower() for label in empty)
+        return SourceHealth("Anhao", PARTIAL, f"{detail} · empty: {names}", ANHAO_DATA_HINT)
+    missing_dirs = [name for name in ("img", "thumbs") if not (Path(root) / name).is_dir()]
     if missing_dirs:
         folders = ", ".join(f"`{name}/`" for name in missing_dirs)
         return SourceHealth("Anhao", PARTIAL, f"{detail} · missing {folders}", ANHAO_IMAGES_HINT)
