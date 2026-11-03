@@ -135,11 +135,37 @@ class UIBuildTests(unittest.TestCase):
             if c.get("props", {}).get("label") in {"View angle", "Pose view"}
         }
         self.assertEqual(set(controls), {"View angle", "Pose view"})
+        # /config is JSON, so each target arrives as a [id, event] list, not a tuple.
         for component_id in controls.values():
             self.assertTrue(
-                any((component_id, "input") in dep.get("targets", []) for dep in config["dependencies"]),
+                any(
+                    target_id == component_id and event == "input"
+                    for dep in config["dependencies"]
+                    for target_id, event in dep.get("targets", [])
+                ),
                 f"no user-input event on angle control {component_id}",
             )
+
+    def test_legacy_gallery_uses_click_bridge(self):
+        _, config = self._serve(with_controlnet=True)
+        by_elem = {c["props"]["elem_id"]: c["id"] for c in config["components"] if c.get("props", {}).get("elem_id")}
+        self.assertIn("fcb_legacy_gallery", by_elem)
+        pick_id = by_elem["fcb_legacy_gallery_pick"]
+        gallery_id = by_elem["fcb_legacy_gallery"]
+        targets = [tuple(t) for dep in config["dependencies"] for t in dep.get("targets", [])]
+        self.assertIn((pick_id, "change"), targets)
+        self.assertNotIn((gallery_id, "select"), targets)
+
+    def test_legacy_pick_selects_same_slot_again(self):
+        script = self._legacy_script()
+        poses, outfits = ["1", "2"], ["10"]
+        first = script._pick_item("0:111", "Poses", False, poses)
+        self.assertEqual(first[1], "Poses:1")
+        # After switching library, slot 0 again (new nonce) picks the outfit.
+        again = script._pick_item("0:222", "Outfits", False, outfits)
+        self.assertEqual(again[1], "Outfits:10")
+        for bad in ("", "5:1", "x"):
+            self.assertEqual(script._pick_item(bad, "Outfits", False, outfits)[1], "", bad)
 
     def test_builds_without_controlnet(self):
         _, config = self._serve(with_controlnet=False)

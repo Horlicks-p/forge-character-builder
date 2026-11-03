@@ -85,6 +85,15 @@ def charadb_health(catalog: CharaDBCatalog) -> SourceHealth:
 ANHAO_DATA_HINT = "Copy the dataset's `data/*.json` files again; an empty library hides that part of the UI."
 
 
+def _library_label(root: Path, label: str, count: int) -> str:
+    """``"1,439 pose images (288 poses)"`` when views are grouped, else ``"4 poses"``."""
+    if label == "Poses" and count:
+        groups = anhao.pose_group_count(root)
+        if groups and groups != count:
+            return f"{count:,} pose images ({groups:,} poses)"
+    return f"{count:,} {label.lower()}"
+
+
 def anhao_health(
     root: Optional[Path],
     *,
@@ -105,7 +114,7 @@ def anhao_health(
     problems = [f"{label}: {probe.error}" for label, probe in probes.items() if probe.error]
     readable = {label: probe.count for label, probe in probes.items() if not probe.error}
     empty = [label for label, count in readable.items() if count == 0]
-    detail = "Anhao: " + (", ".join(f"{count:,} {label.lower()}" for label, count in readable.items()) or "no usable libraries")
+    detail = "Anhao: " + (", ".join(_library_label(probe_root, label, count) for label, count in readable.items()) or "no usable libraries")
 
     if root is None:
         reason = "; ".join(problems) or "`data/pose-zh.json` is missing"

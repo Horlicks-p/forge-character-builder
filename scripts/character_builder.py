@@ -17,7 +17,9 @@ except ImportError:  # pragma: no cover - only outside Forge
 # Forge Neo adds the extension root to sys.path, so the shared core package
 # (kept outside scripts/ so Forge does not load it as a script) imports directly.
 from character_builder_core import anhao, charadb_adapter, session, sources
-from character_builder_ui.builder_tab import build_builder_tab
+# The Builder's thumbnail-click bridge is reused so the legacy gallery can
+# re-pick the same slot after a library switch, paging or a cleared selection.
+from character_builder_ui.builder_tab import _parse_pick, _pick_box, build_builder_tab
 
 
 EXTENSION_ROOT = Path(__file__).resolve().parent.parent
@@ -239,11 +241,11 @@ def _switch_legacy_angle(ref: str, item_id: str, use_depth: bool, safe_mode: boo
     return image, _selection_ref("Poses", chosen), _prompt_for("Poses", chosen), details
 
 
-def _select_item(label: str, use_depth: bool, item_ids: list[str], evt: gr.SelectData):
-    if not item_ids or evt.index is None or evt.index >= len(item_ids):
+def _select_item(label: str, use_depth: bool, item_ids: list[str], index: int | None):
+    if not item_ids or index is None or not 0 <= index < len(item_ids):
         return _clear_legacy_selection()
 
-    item = _find_item(label, item_ids[evt.index])
+    item = _find_item(label, item_ids[index])
     if item is None:
         return None, "", "", "The selected item could not be found", _legacy_angle_update("")
 
@@ -252,6 +254,11 @@ def _select_item(label: str, use_depth: bool, item_ids: list[str], evt: gr.Selec
         return None, "", "", details, _legacy_angle_update("")
     ref = _selection_ref(label, item)
     return image, ref, _prompt_for(label, item), details, _legacy_angle_update(ref)
+
+
+def _pick_item(pick: str, label: str, use_depth: bool, item_ids: list[str]):
+    """Selection from the hidden pick box written by the JS click bridge."""
+    return _select_item(label, use_depth, item_ids, _parse_pick(pick))
 
 
 def _random_item(label, query, primary, secondary, safe_mode, use_depth):
@@ -316,7 +323,11 @@ def _builder_context() -> session.BuilderContext:
 
 def _reference_count(ctx: session.BuilderContext) -> int:
     charadb_count = sum(len(ctx.charadb.list_kind(kind)) for kind in ctx.charadb.by_kind if kind != "pose")
-    return charadb_count + sum(anhao.library_count(GALLERY_ROOT, label) for label in _visible_libraries())
+    # Poses count as logical poses (what the galleries show), not view images.
+    return charadb_count + sum(
+        anhao.pose_group_count(GALLERY_ROOT) if label == "Poses" else anhao.library_count(GALLERY_ROOT, label)
+        for label in _visible_libraries()
+    )
 
 
 def _gallery_ui():
@@ -368,6 +379,7 @@ def _gallery_ui():
                     with gr.Column(scale=4, elem_classes=["fcb-browser"]):
                         gallery = gr.Gallery(
                             label="References",
+                            elem_id="fcb_legacy_gallery",
                             columns=6,
                             rows=2,
                             height=590,
@@ -377,6 +389,7 @@ def _gallery_ui():
                             show_share_button=False,
                             elem_classes=["fcb-gallery"],
                         )
+                        legacy_pick = _pick_box("fcb_legacy_gallery")
                         with gr.Row(elem_classes=["fcb-pagination"]):
                             previous = gr.Button("Previous", min_width=90)
                             page_info = gr.Markdown("Loading…", elem_classes=["fcb-page-info"])
@@ -447,9 +460,9 @@ def _gallery_ui():
                     fn=_refresh, inputs=refresh_inputs, outputs=outputs, show_progress=False
                 )
 
-                gallery.select(
-                    fn=_select_item,
-                    inputs=[library, use_depth, item_ids],
+                legacy_pick.change(
+                    fn=_pick_item,
+                    inputs=[legacy_pick, library, use_depth, item_ids],
                     outputs=legacy_selection_outputs,
                     show_progress=False,
                 )

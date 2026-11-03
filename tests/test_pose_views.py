@@ -87,6 +87,14 @@ class PoseViewTests(unittest.TestCase):
         self.assertEqual((path.name, module), ("standard_P001_side.webp", "None"))
         self.assertEqual(path.parent.name, "poses")
 
+    def test_counts_name_images_and_logical_poses(self):
+        from character_builder_core import sources
+
+        # Fixture: standard P001 (5 views), standard P002 (4), other P001 (1).
+        self.assertEqual(anhao.pose_group_count(self.root), 3)
+        detail = sources.anhao_health(self.root, libraries=("Poses",)).detail
+        self.assertIn("10 pose images (3 poses)", detail)
+
     def test_ungrouped_custom_records_remain_separate(self):
         a = {"id": "raw1", "角度": "正面"}
         b = {"id": "raw2", "角度": "侧面"}

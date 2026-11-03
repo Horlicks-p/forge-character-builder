@@ -139,6 +139,11 @@ def pose_group_representatives(records: list[dict]) -> list[dict]:
     return [next((item for item in group if item.get("角度") == "正面"), group[0]) for group in groups.values()]
 
 
+def pose_group_count(root: Optional[Path]) -> int:
+    """Number of logical poses (one per system + pose number)."""
+    return len({pose_group_key(item) for item in load_library(root, "Poses")})
+
+
 def pose_views(root: Optional[Path], record: dict) -> list[dict]:
     """All available viewpoints for the pose, in a stable canonical order."""
     key = pose_group_key(record)
