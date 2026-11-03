@@ -235,7 +235,7 @@ def build_catalog(entries: list[dict], path: Optional[Path] = None) -> CharaDBCa
         if kind == KIND_EYE_SHAPE:
             # Eye-shape samples carry an illustrative eye colour ("tareme, brown
             # eyes"); colour comes only from the Eye color field.
-            normalized = remove_tags(tags, eye_color_vocab) or tags
+            normalized = remove_tags(tags, eye_color_vocab)
         elif kind == KIND_OUTFIT:
             # Some outfits carry hair/eye colours ("..., black hair"); those must
             # not override the character or its LoRA.

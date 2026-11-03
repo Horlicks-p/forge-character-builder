@@ -382,7 +382,7 @@ def _image_for_controlnet(path: str, label: str, use_depth: bool):
     if not path:
         raise gr.Error("Select an item first")
     if not Path(path).is_file():
-        raise gr.Error(f"Missing pose image: {Path(path).name}")
+        raise gr.Error(f"Missing reference image: {Path(path).name}")
     image = ImageOps.exif_transpose(Image.open(path)).convert("RGB")
     array = np.asarray(image)
     if label == "Poses" and use_depth:

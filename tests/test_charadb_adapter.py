@@ -5,7 +5,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from ai_pose_gallery_core.charadb_adapter import find_items_file, load_catalog, parse_items
+from ai_pose_gallery_core.charadb_adapter import build_catalog, find_items_file, load_catalog, parse_items
 from ai_pose_gallery_core.models import (
     KIND_BANGS,
     KIND_EYE_COLOR,
@@ -109,6 +109,18 @@ class CatalogTests(unittest.TestCase):
         safe_ids = {i.item_id for i in self.catalog.list_kind(KIND_OUTFIT, safe_mode=True)}
         self.assertEqual(all_ids - safe_ids, {"O231"})
 
+
+    def test_eye_shape_with_only_color_emits_nothing(self):
+        # Regression: an eye-shape entry whose only tag is an eye colour must not
+        # fall back to emitting that colour.
+        catalog = build_catalog([
+            {"id": "E1", "set": "hair", "cat": "目の色", "sub": "eye", "tags": "brown eyes"},
+            {"id": "S1", "set": "hair", "cat": "瞳の形", "sub": "eye", "tags": "brown eyes"},
+        ])
+        shape = catalog.get("S1")
+        self.assertEqual(shape.normalized_tags, ())
+        self.assertEqual(shape.raw_tags, "brown eyes")
+        self.assertEqual(shape.display_name, "S1")
 
 @unittest.skipUnless(os.environ.get("CHARADB_ITEMS"), "set CHARADB_ITEMS to a real items_public.json")
 class RealDataTests(unittest.TestCase):
