@@ -79,7 +79,9 @@ Character Builder 分頁有三個步驟：
 
 1. **Character**：選髮型（Gallery）、髮色、瀏海、髮飾、眼睛顏色與眼型（Dropdown）。
 2. **Outfit**：從 CharaDB 或 Anhao 選服裝。
-3. **Pose**：選 Anhao Pose，Normal 送 `canny`、Depth 送 `None` 預處理器。
+3. **Pose**：Anhao 同一姿勢的各視角合併成一張卡片；點選後可在 **View angle** 切換 Front／High angle／Low angle／Side／Three-quarter（只顯示確實存在的角度）。Normal 送 `canny`、Depth 送 `None` 預處理器。
+
+Pose Gallery（Legacy）也支援同一姿勢多視角切換，原有服裝與 Portraits 圖庫不受影響。姿勢以「體系 + 姿勢編號」分組；本機 Anhao 資料庫共有 1,439 筆視角紀錄、288 組獨立姿勢（其中 287 組有五視角、1 組有四視角）。
 
 右側的 Final Prompt 可直接修改。**Append** 只在 txt2img Prompt 末尾追加，
 不更動既有的 Prompt、LoRA 與 Negative Prompt；**Send All** 先把 Pose 送到
