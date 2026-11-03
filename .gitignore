@@ -3,3 +3,4 @@ __pycache__/
 vendor/
 
 .playwright-mcp/
+tests/harness/*.pyi
