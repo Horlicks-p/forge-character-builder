@@ -173,6 +173,35 @@ def _find_item(label: str, item_id: str) -> dict | None:
     return None
 
 
+# The legacy selection is stored as "<library>:<id>", never as an image path:
+# the image and its preprocessor are resolved together from the *current*
+# Normal/Depth setting when sending, so they cannot disagree.
+
+
+def _selection_ref(label: str, item: dict) -> str:
+    return f"{label}:{item.get('id', '')}"
+
+
+def _parse_selection_ref(ref: str) -> tuple[str, dict] | None:
+    label, _, item_id = str(ref or "").partition(":")
+    if label not in LIBRARIES or not item_id:
+        return None
+    item = _find_item(label, item_id)
+    return (label, item) if item is not None else None
+
+
+def _preview(label: str, item: dict, use_depth: bool):
+    """(image, details) for the selected item, or (None, error text)."""
+    path = _asset_path(label, item, thumbnail=False, use_depth=bool(use_depth))
+    if not path.is_file():
+        return None, f"Image not found: {path.name}"
+    image = ImageOps.exif_transpose(Image.open(path)).convert("RGB")
+    details = f"{_item_title(label, item)}\nID: {item.get('id', '')}"
+    if label == "Poses":
+        details += f"\nMode: {'Depth control image' if use_depth else 'Pose reference image'}"
+    return image, details
+
+
 def _select_item(label: str, use_depth: bool, item_ids: list[str], evt: gr.SelectData):
     if not item_ids or evt.index is None or evt.index >= len(item_ids):
         return None, "", "", "No item selected"
@@ -181,16 +210,10 @@ def _select_item(label: str, use_depth: bool, item_ids: list[str], evt: gr.Selec
     if item is None:
         return None, "", "", "The selected item could not be found"
 
-    path = _asset_path(label, item, thumbnail=False, use_depth=bool(use_depth))
-    if not path.is_file():
-        return None, "", "", f"Image not found: {path.name}"
-
-    image = ImageOps.exif_transpose(Image.open(path)).convert("RGB")
-    title = _item_title(label, item)
-    details = f"{title}\nID: {item.get('id', '')}"
-    if label == "Poses":
-        details += f"\nMode: {'Depth control image' if use_depth else 'Pose reference image'}"
-    return image, str(path), _prompt_for(label, item), details
+    image, details = _preview(label, item, use_depth)
+    if image is None:
+        return None, "", "", details
+    return image, _selection_ref(label, item), _prompt_for(label, item), details
 
 
 def _random_item(label, query, primary, secondary, safe_mode, use_depth):
@@ -198,26 +221,40 @@ def _random_item(label, query, primary, secondary, safe_mode, use_depth):
     if not items:
         return None, "", "", "No items match the current filters"
     item = random.choice(items)
-    path = _asset_path(label, item, thumbnail=False, use_depth=bool(use_depth))
-    if not path.is_file():
+    image, details = _preview(label, item, use_depth)
+    if image is None:
         return None, "", "", "The randomly selected image is missing"
-    image = ImageOps.exif_transpose(Image.open(path)).convert("RGB")
-    details = f"{_item_title(label, item)}\nID: {item.get('id', '')}"
-    return image, str(path), _prompt_for(label, item), details
+    return image, _selection_ref(label, item), _prompt_for(label, item), details
 
 
-def _image_for_controlnet(path: str, label: str, use_depth: bool):
-    if not path:
+def _refresh_preview(ref: str, use_depth: bool):
+    """Show the image that would be sent after Normal/Depth changes."""
+    parsed = _parse_selection_ref(ref)
+    if parsed is None:
+        return gr.update(), gr.update()
+    image, details = _preview(*parsed, use_depth)
+    return image, details
+
+
+def _controlnet_source(ref: str, use_depth: bool, safe_mode: bool) -> tuple[Path, str]:
+    """Image path and preprocessor for the current selection and mode."""
+    parsed = _parse_selection_ref(ref)
+    if parsed is None:
         raise gr.Error("Select an item first")
-    if not Path(path).is_file():
-        raise gr.Error(f"Missing reference image: {Path(path).name}")
+    label, item = parsed
+    if safe_mode and _is_nsfw(label, item):
+        raise gr.Error("The selected reference is hidden by Safe mode")
+    depth = label == "Poses" and bool(use_depth)
+    path = _asset_path(label, item, thumbnail=False, use_depth=depth)
+    if not path.is_file():
+        raise gr.Error(f"Missing reference image: {path.name}")
+    return path, ("canny" if label == "Poses" and not depth else "None")
+
+
+def _image_for_controlnet(ref: str, use_depth: bool, safe_mode: bool = True):
+    path, module = _controlnet_source(ref, use_depth, safe_mode)
     image = ImageOps.exif_transpose(Image.open(path)).convert("RGB")
-    array = np.asarray(image)
-    if label == "Poses" and use_depth:
-        return array, True, "None"
-    if label == "Poses":
-        return array, True, "canny"
-    return array, True, "None"
+    return np.asarray(image), True, module
 
 
 def _find_controlnet_target():
@@ -284,7 +321,7 @@ def _gallery_ui():
 
                 page = gr.State(1)
                 item_ids = gr.State([])
-                selected_path = gr.State("")
+                selected_ref = gr.State("")
 
                 with gr.Row(elem_classes=["fcb-workbench"]):
                     with gr.Column(scale=4, elem_classes=["fcb-browser"]):
@@ -351,6 +388,13 @@ def _gallery_ui():
                 safe_mode.change(fn=_reset_page, inputs=refresh_inputs, outputs=outputs, show_progress=False)
                 use_depth.change(fn=_reset_page, inputs=refresh_inputs, outputs=outputs, show_progress=False)
 
+                use_depth.change(
+                    fn=_refresh_preview,
+                    inputs=[selected_ref, use_depth],
+                    outputs=[selected_image, selection_details],
+                    show_progress=False,
+                )
+
                 previous.click(fn=lambda value: _move_page(value, -1), inputs=[page], outputs=[page], show_progress=False).then(
                     fn=_refresh, inputs=refresh_inputs, outputs=outputs, show_progress=False
                 )
@@ -361,13 +405,13 @@ def _gallery_ui():
                 gallery.select(
                     fn=_select_item,
                     inputs=[library, use_depth, item_ids],
-                    outputs=[selected_image, selected_path, prompt, selection_details],
+                    outputs=[selected_image, selected_ref, prompt, selection_details],
                     show_progress=False,
                 )
                 random_button.click(
                     fn=_random_item,
                     inputs=[library, search, primary, secondary, safe_mode, use_depth],
-                    outputs=[selected_image, selected_path, prompt, selection_details],
+                    outputs=[selected_image, selected_ref, prompt, selection_details],
                     show_progress=False,
                 )
 
@@ -395,7 +439,7 @@ def _gallery_ui():
                 if target is not None:
                     send_controlnet.click(
                         fn=_image_for_controlnet,
-                        inputs=[selected_path, library, use_depth],
+                        inputs=[selected_ref, use_depth, safe_mode],
                         outputs=[target.image.background, target.enabled, target.module],
                         show_progress=False,
                     ).success(

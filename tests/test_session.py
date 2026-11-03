@@ -187,6 +187,50 @@ class PromptStateTests(TempDataTest):
             kept, notices = session.apply_safe_mode(self.ctx, sel, False)
             self.assertEqual((kept, notices), (sel, []))
 
+    def test_safe_mode_warns_when_edited_prompt_may_keep_tags(self):
+        sel = BuilderSelection(outfit=ItemRef(anhao.OUTFIT_SOURCE, "11"))
+        generated = session.regenerate(self.ctx, sel, "", "", False).final
+        self.assertEqual(generated, "black camisole")
+        edited = generated + ", masterpiece"
+
+        cleared, notices = session.apply_safe_mode(self.ctx, sel, True, prompt_edited=session.is_edited(edited, generated))
+        self.assertIsNone(cleared.outfit)
+        self.assertIn(session.STALE_TAGS_NOTICE, notices)
+        # Dirty-state protection is kept: the edited text is not rewritten.
+        update = session.regenerate(self.ctx, cleared, edited, generated, True)
+        self.assertEqual((update.final, update.notice), (edited, session.EDITED_NOTICE))
+
+        # Untouched prompt: it is rebuilt without the tags, so no extra warning.
+        _, notices = session.apply_safe_mode(self.ctx, sel, True, prompt_edited=session.is_edited(generated, generated))
+        self.assertNotIn(session.STALE_TAGS_NOTICE, notices)
+        self.assertEqual(session.regenerate(self.ctx, cleared, generated, generated, True).final, "")
+
+    def test_safe_mode_pose_only_clear_has_no_stale_tag_warning(self):
+        _, notices = session.apply_safe_mode(self.ctx, BuilderSelection(**pose(2)), True, prompt_edited=True)
+        self.assertEqual(notices, ["Pose #2 was cleared because Safe mode hides it."])
+
+    def test_outfit_source_change_clears_other_provider_outfit(self):
+        sel = BuilderSelection(hair_color=cref("H049"), outfit=cref("O001"))
+        generated = session.regenerate(self.ctx, sel, "", "", True).final
+        self.assertIn("serafuku", generated)
+
+        cleared, notices = session.change_outfit_source(sel, anhao.OUTFIT_SOURCE)
+        self.assertIsNone(cleared.outfit)
+        self.assertEqual(cleared.hair_color, sel.hair_color)  # nothing else changes
+        self.assertEqual(notices, ["Outfit #O001 (CharaDB (Anime)) was cleared because the outfit source changed."])
+        self.assertEqual(session.regenerate(self.ctx, cleared, generated, generated, True).final, "black hair")
+
+        # Edited prompt: kept, and the user is told old tags may remain.
+        edited = generated + ", smile"
+        cleared, notices = session.change_outfit_source(sel, anhao.OUTFIT_SOURCE, prompt_edited=True)
+        self.assertIn(session.STALE_TAGS_NOTICE, notices)
+        self.assertEqual(session.regenerate(self.ctx, cleared, edited, generated, True).final, edited)
+
+    def test_outfit_source_change_keeps_same_provider_outfit(self):
+        sel = BuilderSelection(outfit=cref("O001"))
+        self.assertEqual(session.change_outfit_source(sel, "charadb"), (sel, []))
+        self.assertEqual(session.change_outfit_source(BuilderSelection(), anhao.OUTFIT_SOURCE), (BuilderSelection(), []))
+
     def test_summaries(self):
         sel = BuilderSelection(hairstyle=cref("H001-black"), outfit=cref("O130"), **pose(1, "depth"))
         self.assertIn("long hair", session.hairstyle_summary(self.ctx, sel))

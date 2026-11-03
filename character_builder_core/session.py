@@ -33,6 +33,10 @@ STATUS_POSE_SENT = "Pose sent to ControlNet Unit 1"
 STATUS_CONTROLNET_UNAVAILABLE = "ControlNet unavailable"
 STATUS_MISSING_IMAGE = "Missing reference image"
 EDITED_NOTICE = "Final Prompt was edited manually. Press **Reset from selection** to regenerate it."
+STALE_TAGS_NOTICE = (
+    "Final Prompt was edited manually and kept as is, so it may still contain tags from the cleared outfit. "
+    "Press **Reset from selection** to rebuild it, or remove them by hand."
+)
 
 OUTFIT_SOURCE_LABELS = {
     CHARADB_SOURCE: "CharaDB (Anime)",
@@ -315,12 +319,41 @@ def regenerate(
     return PromptUpdate(parts.appearance, parts.outfit, final, parts.final, notice, parts.warnings)
 
 
+def is_edited(final_text: Optional[str], last_generated: Optional[str]) -> bool:
+    return (final_text or "") != (last_generated or "")
+
+
 def edited_notice(final_text: Optional[str], last_generated: Optional[str]) -> str:
-    return EDITED_NOTICE if (final_text or "") != (last_generated or "") else ""
+    return EDITED_NOTICE if is_edited(final_text, last_generated) else ""
 
 
-def apply_safe_mode(ctx: BuilderContext, selection: BuilderSelection, safe_mode: bool) -> tuple[BuilderSelection, list[str]]:
-    """Clear selections that Safe mode hides, so they can never be sent."""
+def change_outfit_source(
+    selection: BuilderSelection, source: Optional[str], *, prompt_edited: bool = False
+) -> tuple[BuilderSelection, list[str]]:
+    """Drop an outfit picked from another provider when the source changes.
+
+    The Final Prompt itself is left to ``regenerate`` (dirty-state rules);
+    an edited prompt only gets a notice that old tags may remain.
+    """
+    current = selection.outfit
+    if current is None or current.source_id == (source or ""):
+        return selection, []
+    label = OUTFIT_SOURCE_LABELS.get(current.source_id, current.source_id)
+    notices = [f"Outfit #{current.item_id} ({label}) was cleared because the outfit source changed."]
+    if prompt_edited:
+        notices.append(STALE_TAGS_NOTICE)
+    return selection.with_changes(outfit=None), notices
+
+
+def apply_safe_mode(
+    ctx: BuilderContext, selection: BuilderSelection, safe_mode: bool, *, prompt_edited: bool = False
+) -> tuple[BuilderSelection, list[str]]:
+    """Clear selections that Safe mode hides, so they can never be sent.
+
+    With ``prompt_edited`` the kept Final Prompt may still hold the cleared
+    outfit's tags, so a notice says so instead of implying they are gone.
+    Poses emit no tags (MVP), so clearing a pose needs no such notice.
+    """
     if not safe_mode:
         return selection, []
     notices: list[str] = []
@@ -328,6 +361,8 @@ def apply_safe_mode(ctx: BuilderContext, selection: BuilderSelection, safe_mode:
     if outfit is not None and outfit.nsfw:
         selection = selection.with_changes(outfit=None)
         notices.append(f"Outfit #{outfit.item_id} was cleared because Safe mode hides it.")
+        if prompt_edited:
+            notices.append(STALE_TAGS_NOTICE)
     record = pose_record(ctx, selection.pose)
     if record is not None and anhao.is_nsfw("Poses", record):
         notices.append(f"Pose #{selection.pose.item_id} was cleared because Safe mode hides it.")

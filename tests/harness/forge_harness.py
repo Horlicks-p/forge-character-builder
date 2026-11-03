@@ -35,7 +35,11 @@ class FakeLogicalImage(gr.Textbox):
         if value is None:
             return ""
         shape = getattr(value, "shape", None)
-        return f"array {tuple(shape)}" if shape is not None else str(value)
+        if shape is None:
+            return str(value)
+        # The mean colour tells same-sized images apart (pose vs. depth).
+        mean = tuple(int(round(float(c))) for c in value.reshape(-1, shape[-1]).mean(axis=0))
+        return f"array {tuple(shape)} rgb{mean}"
 
     def get_block_name(self):
         return "textbox"
@@ -133,6 +137,7 @@ def build_demo(*, with_controlnet: bool = True, options: dict | None = None) -> 
 
     spec = importlib.util.spec_from_file_location("character_builder_script", ROOT / "scripts" / "character_builder.py")
     module = importlib.util.module_from_spec(spec)
+    sys.modules["character_builder_script"] = module  # lets tests reach helpers
     spec.loader.exec_module(module)
     (interface, title, tab_id), = callbacks[0]()
 

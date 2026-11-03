@@ -324,7 +324,13 @@ def build_builder_tab(
     def reset_outfit_page(source, category, query, safe):
         return outfit_gallery_update(source, category, query, safe, 1)
 
-    outfit_source.change(outfit_filters, [outfit_source, safe_mode, outfit_category], [outfit_category], show_progress=False).then(
+    def change_outfit_source(source, sel, final, last, safe):
+        sel, notices = session.change_outfit_source(sel, source, prompt_edited=session.is_edited(final, last))
+        return view(sel, final, last, safe, notices=notices)
+
+    outfit_source.change(
+        change_outfit_source, [outfit_source, selection, *prompt_inputs], view_outputs, show_progress=False
+    ).then(outfit_filters, [outfit_source, safe_mode, outfit_category], [outfit_category], show_progress=False).then(
         reset_outfit_page, outfit_gallery_inputs[:-1], outfit_gallery_outputs, show_progress=False
     )
     outfit_category.change(reset_outfit_page, outfit_gallery_inputs[:-1], outfit_gallery_outputs, show_progress=False)
@@ -401,7 +407,7 @@ def build_builder_tab(
     # ------------------------------------------------------------ safe mode
 
     def change_safe_mode(safe, sel, final, last):
-        sel, notices = session.apply_safe_mode(ctx, sel, bool(safe))
+        sel, notices = session.apply_safe_mode(ctx, sel, bool(safe), prompt_edited=session.is_edited(final, last))
         return view(sel, final, last, safe, notices=notices)
 
     safe_mode.change(change_safe_mode, [safe_mode, selection, final_box, last_generated], view_outputs, show_progress=False).then(

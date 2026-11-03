@@ -13,6 +13,12 @@ HAS_GRADIO = importlib.util.find_spec("gradio") is not None
 sys.path.insert(0, str(Path(__file__).parent / "harness"))
 
 
+def gradio_update():
+    import gradio
+
+    return gradio.update()
+
+
 @unittest.skipUnless(HAS_GRADIO, "gradio 4.40 not installed")
 class UIBuildTests(unittest.TestCase):
     def _serve(self, **kwargs):
@@ -55,6 +61,48 @@ class UIBuildTests(unittest.TestCase):
         _, config = self._serve(with_controlnet=True, options={"fcb_show_portraits": True, "fcb_show_anhao_outfits": False})
         self.assertEqual(self._choices(config, "Library"), ["Poses", "Outfits", "Portraits"])
         self.assertNotIn("anhao_outfit", self._choices(config, "Source"))
+
+    def _legacy_script(self):
+        from forge_harness import build_demo
+
+        build_demo(with_controlnet=True)
+        return sys.modules["character_builder_script"]
+
+    def test_legacy_send_resolves_image_and_preprocessor_together(self):
+        script = self._legacy_script()
+        # A pose picked in Normal mode, then "Use depth image" ticked: the
+        # depth image goes with None (before: the normal image went with None).
+        normal, module = script._controlnet_source("Poses:1", False, True)
+        self.assertEqual((normal.name, module), ("a.png", "canny"))
+        depth, module = script._controlnet_source("Poses:1", True, True)
+        self.assertEqual((depth.parent.name, depth.name, module), ("pose", "a.webp", "None"))
+        self.assertIn("depth", depth.parts)
+        # Non-pose libraries ignore the depth checkbox and use None.
+        outfit, module = script._controlnet_source("Outfits:10", True, True)
+        self.assertEqual((outfit.name, module), ("c.png", "None"))
+
+        array, enabled, module = script._image_for_controlnet("Poses:1", True, True)
+        self.assertEqual((array.shape, enabled, module), ((160, 120, 3), True, "None"))
+
+    def test_legacy_send_rejects_stale_or_hidden_selection(self):
+        import gradio
+
+        script = self._legacy_script()
+        for ref in ("", "Bogus:1", "Poses:999", "/tmp/x.png"):
+            with self.assertRaises(gradio.Error, msg=ref):
+                script._controlnet_source(ref, False, True)
+        with self.assertRaises(gradio.Error):
+            script._controlnet_source("Poses:2", False, True)  # 18+ while Safe mode is on
+        self.assertEqual(script._controlnet_source("Poses:2", False, False)[1], "canny")
+
+    def test_legacy_preview_follows_depth_toggle(self):
+        script = self._legacy_script()
+        _, details = script._refresh_preview("Poses:1", True)
+        self.assertIn("Depth control image", details)
+        _, details = script._refresh_preview("Poses:1", False)
+        self.assertIn("Pose reference image", details)
+        image, details = script._refresh_preview("", True)  # nothing selected: no change
+        self.assertEqual((image, details), (gradio_update(), gradio_update()))
 
     def test_builds_without_controlnet(self):
         _, config = self._serve(with_controlnet=False)
