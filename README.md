@@ -1,6 +1,6 @@
-# AI Pose Gallery for Forge Classic
+# AI Pose Gallery for Forge Neo
 
-Forge Classic 原生的中文姿勢、服裝與人物參考圖庫介面，搭配
+[Forge Neo](https://github.com/Haoming02/sd-webui-forge-classic/tree/neo)（`neo` 分支）原生的中文姿勢、服裝與人物參考圖庫介面，搭配
 [ai-pose-gallery-zh](https://github.com/anhao/ai-pose-gallery-zh) 資料使用。
 
 ## 功能
@@ -31,7 +31,21 @@ extensions/
 
 也可以用環境變數 `AI_POSE_GALLERY_ROOT` 指定原始資料庫路徑。
 
-重新啟動 Forge 後，頂部會出現「AI 姿勢圖庫」分頁。
+重新啟動 Forge 後，頂部會出現「AI Pose Gallery」分頁。
+
+### CharaDB（選用，Character Builder 用）
+
+Character Builder 的髮型／眼睛／服裝 tags 來自
+[CharaDB](https://github.com/taki-ttt/charadb)。請自行下載官方的
+`data/items_public.json`，放到下列任一位置：
+
+- `vendor/charadb/data/items_public.json`
+- 或以環境變數 `CHARADB_ROOT` 指定 CharaDB 根目錄（其下的 `data/items_public.json`）
+
+未安裝時，既有的 Pose Gallery 功能照常可用。CharaDB 的圖片包請從官方 Release
+自行解壓縮，本擴充不會下載或重新散布任何圖片。
+
+> 目前（Phase 1）只完成資料轉換與 Prompt 組裝核心，Character Builder 介面將於 Phase 2 加入。
 
 ## ControlNet 建議
 
@@ -39,8 +53,21 @@ extensions/
 - Depth 圖：擴充會預選 `None`，模型請選 Depth ControlNet。
 - 服裝與人物圖：適合送到 img2img，或自行搭配 Reference / IP-Adapter。
 
+## 開發與測試
+
+共用邏輯位於擴充根目錄的 `ai_pose_gallery_core/`（純 Python，不依賴 Gradio／Forge）。
+在專案根目錄執行：
+
+```bash
+python -m unittest discover -s tests
+```
+
+若要額外對真實 CharaDB 索引驗證，設定 `CHARADB_ITEMS=<items_public.json 路徑>` 後再執行。
+
 ## 授權
 
 本擴充程式碼可獨立授權；原始專案的 `img/`、`thumbs/` 與 `data/`
 不包含在其 MIT 程式碼授權內。本專案不重新散布這些素材。
 
+- CharaDB：程式碼 MIT；`items_public.json` 的 tags／名稱為 CC0；圖片禁止再散布，
+  本專案只讀取使用者自行安裝的檔案。

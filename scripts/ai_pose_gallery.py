@@ -3,7 +3,6 @@ from __future__ import annotations
 import json
 import os
 import random
-import re
 from functools import lru_cache
 from pathlib import Path
 
@@ -12,6 +11,10 @@ import numpy as np
 from PIL import Image, ImageOps
 
 from modules import infotext_utils, script_callbacks
+
+# Forge Neo adds the extension root to sys.path, so the shared core package
+# (kept outside scripts/ so Forge does not load it as a script) imports directly.
+from ai_pose_gallery_core.prompts import format_outfit_keywords
 
 
 EXTENSION_ROOT = Path(__file__).resolve().parent.parent
@@ -232,66 +235,6 @@ def _item_title(label: str, item: dict) -> str:
     return f"{hair_length or 'Portrait'} reference"
 
 
-# Conservative tag boundaries for unpunctuated outfit keywords from ai-pose-gallery-zh.
-# Keep modifiers (e.g. "pleated mini") with the following garment instead of
-# replacing every space with a comma.
-OUTFIT_GARMENT_NOUNS = {
-    "blouse", "bra", "bracelet", "camisole", "cap", "cardigan", "choker",
-    "coat", "corset", "dress", "earrings", "gloves", "hat", "headband",
-    "heels", "hoodie", "jacket", "jeans", "jumpsuit", "kimono", "leggings",
-    "loafers", "necklace", "overalls", "pajamas", "panties", "pants",
-    "pumps", "sandals", "scarf", "shirt", "shoes", "shorts", "skirt",
-    "sneakers", "socks", "stockings", "sweater", "swimsuit", "tights",
-    "top", "vest", "bag", "backpack", "belt", "boots", "bikini",
-    "tie", "uniform", "hairpin",
-}
-OUTFIT_COLOR_WORDS = {
-    "black", "blue", "brown", "cream", "gold", "gray", "green", "grey",
-    "ivory", "navy", "orange", "pink", "purple", "red", "silver",
-    "white", "yellow", "beige",
-}
-
-
-def _format_outfit_keywords(value: object) -> str:
-    """Insert tag separators without breaking multi-word clothing names."""
-    raw = " ".join(str(value or "").split())
-    if not raw:
-        return ""
-
-    # Respect existing tag boundaries. Do not reinterpret prompts already
-    # supplied in comma-separated (or Chinese-punctuated) form.
-    explicit = [part.strip() for part in re.split(r"[,，、;；]+", raw) if part.strip()]
-    if len(explicit) > 1:
-        return ", ".join(explicit)
-
-    words = raw.split()
-    tags: list[str] = []
-    current: list[str] = []
-    for index, token in enumerate(words):
-        current.append(token)
-        word = token.casefold()
-        next_word = words[index + 1].casefold() if index + 1 < len(words) else ""
-
-        # "knit sweater" and "dress shirt" are single garment names.
-        if word == "knit":
-            boundary = next_word not in {"sweater", "cardigan", "dress", "top", "vest"}
-        elif word == "dress" and next_word == "shirt":
-            boundary = False
-        elif word in {"ribbon", "bow"}:
-            # Can be either a separate accessory or a garment modifier.
-            boundary = not next_word or next_word in OUTFIT_COLOR_WORDS
-        else:
-            boundary = word in OUTFIT_GARMENT_NOUNS
-
-        if boundary:
-            tags.append(" ".join(current))
-            current = []
-
-    if current:
-        tags.append(" ".join(current))
-    return ", ".join(tags)
-
-
 def _prompt_for(label: str, item: dict) -> str:
     if label == "Poses":
         angle = _english_value(item.get("角度", ""))
@@ -300,7 +243,7 @@ def _prompt_for(label: str, item: dict) -> str:
         return ", ".join(part for part in [f"{angle} view" if angle else "", category, system, "character pose reference"] if part)
 
     if label == "Outfits":
-        english = _format_outfit_keywords(item.get("关键词", ""))
+        english = format_outfit_keywords(item.get("关键词", ""))
         return ", ".join(part for part in [english, "detailed outfit"] if part)
 
     section = _english_value(item.get("分区", ""))
@@ -438,6 +381,8 @@ def _random_item(label, query, primary, secondary, safe_mode, use_depth):
 def _image_for_controlnet(path: str, label: str, use_depth: bool):
     if not path:
         raise gr.Error("Select an item first")
+    if not Path(path).is_file():
+        raise gr.Error(f"Missing pose image: {Path(path).name}")
     image = ImageOps.exif_transpose(Image.open(path)).convert("RGB")
     array = np.asarray(image)
     if label == "Poses" and use_depth:
@@ -602,7 +547,8 @@ def _gallery_ui():
                 inputs=[selected_path, library, use_depth],
                 outputs=[target.image.background, target.enabled, target.module],
                 show_progress=False,
-            ).then(
+            ).success(
+                # Only append the prompt after the ControlNet step succeeded.
                 fn=None,
                 inputs=[prompt],
                 js="(text) => appendPoseGalleryPrompt(text, 'txt2img')",
