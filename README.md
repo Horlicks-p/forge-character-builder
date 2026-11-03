@@ -8,7 +8,7 @@ Forge Character Builder 是 [Forge Neo](https://github.com/Haoming02/sd-webui-fo
 - 將姿勢圖送到 txt2img 的 ControlNet Unit 1，並自動切換到 txt2img 分頁。
 - 同一姿勢的 4–5 個視角會合併為一張卡片，再由 View angle 切換。
 
-目前版本：**1.5.0**
+目前版本：**1.5.1**
 
 > 本專案原名 `ai-pose-gallery-forge`，與原始圖庫作者沒有從屬或合作關係。素材不包含在此外掛的 Git repository 中，必須由使用者自行下載並遵守各來源的使用條款。
 
@@ -210,6 +210,12 @@ Depth 圖已經是處理完成的控制圖，所以外掛會把 Preprocessor 設
 ### Prompt 會蓋掉我原本的內容嗎？
 
 不會。Append 與 Send All 都是在 txt2img Prompt 尾端追加並自動處理逗號；既有 Prompt、LoRA 與 Negative Prompt 不會被清除。
+
+## v1.5.1 重點
+
+- 桌面版選擇 Gallery 會自動延展至右側 UI 高度，移除左欄下方空白。
+- Character Builder 與 Pose Gallery 的分頁列會和右欄底部對齊。
+- 窄螢幕仍保留原本的 Gallery 高度，避免行動版選擇區過長。
 
 ## v1.5.0 重點
 
