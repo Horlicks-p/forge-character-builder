@@ -28,11 +28,13 @@ from .models import (
     CatalogItem,
     HairstyleVariant,
 )
+from .assets import existing_file
 from .prompts import remove_tags, split_tags, tag_key
 
 SOURCE_ID = "charadb"
 SOURCE_URL = "https://github.com/taki-ttt/charadb"
 ITEMS_FILENAME = "items_public.json"
+DATA_JS_FILENAME = "data.js"
 
 # English labels for CharaDB categories. The UI is English-only; unknown
 # categories fall back to "Other" instead of showing the original text.
@@ -88,28 +90,51 @@ def category_en(category: str) -> str:
     return CATEGORY_EN.get(str(category or "").strip(), "Other")
 
 
-def find_items_file(extension_root: Path, environ: Optional[Mapping[str, str]] = None) -> Optional[Path]:
-    """Locate a user-installed ``items_public.json``; ``None`` if absent."""
-    environ = os.environ if environ is None else environ
-    candidates: list[Path] = []
+def _candidate_roots(extension_root: Path, environ: Mapping[str, str]) -> list[Path]:
+    roots: list[Path] = []
     configured = str(environ.get("CHARADB_ROOT", "")).strip()
     if configured:
-        root = Path(configured).expanduser()
-        candidates += [root / "data" / ITEMS_FILENAME, root / ITEMS_FILENAME]
-    candidates += [
-        extension_root / "vendor" / "charadb" / "data" / ITEMS_FILENAME,
-        extension_root / "vendor" / "charadb" / ITEMS_FILENAME,
-        extension_root.parent / "charadb" / "data" / ITEMS_FILENAME,
-    ]
-    for candidate in candidates:
+        roots.append(Path(configured).expanduser())
+    vendor = extension_root / "vendor" / "charadb"
+    roots += [vendor, vendor / "charadb_public", extension_root.parent / "charadb"]
+    return roots
+
+
+def _index_in(root: Path) -> Optional[Path]:
+    # items_public.json is canonical (it keeps the "color" fields); the release
+    # zip ships data.js instead, which is accepted as a fallback.
+    for candidate in (root / "data" / ITEMS_FILENAME, root / ITEMS_FILENAME, root / DATA_JS_FILENAME):
         if candidate.is_file():
             return candidate.resolve()
     return None
 
 
+def find_items_file(extension_root: Path, environ: Optional[Mapping[str, str]] = None) -> Optional[Path]:
+    """Locate a user-installed CharaDB index; ``None`` if absent."""
+    environ = os.environ if environ is None else environ
+    for root in _candidate_roots(extension_root, environ):
+        found = _index_in(root)
+        if found is not None:
+            return found
+    return None
+
+
+def find_image_root(extension_root: Path, environ: Optional[Mapping[str, str]] = None) -> Optional[Path]:
+    """Locate the folder that contains the release's ``thumb/`` directory."""
+    environ = os.environ if environ is None else environ
+    for root in _candidate_roots(extension_root, environ):
+        if (root / "thumb").is_dir():
+            return root.resolve()
+    return None
+
+
 def parse_items(text: str) -> list[dict]:
-    """Parse a JSON array, an ``{"items": [...]}`` object, or JSON Lines."""
-    text = text.lstrip("﻿")
+    """Parse a JSON array, an ``{"items": [...]}`` object, JSON Lines, or release ``data.js``."""
+    text = text.lstrip("﻿").strip()
+    if text.startswith("window.") or text.startswith("var ") or text.startswith("const "):
+        # data.js from the release zip: ``window.DB={...};``
+        start = text.find("{")
+        text = text[start:].rstrip().rstrip(";") if start >= 0 else text
     try:
         data = json.loads(text)
     except json.JSONDecodeError:
@@ -133,8 +158,21 @@ class CharaDBCatalog:
     hair_color_vocab: frozenset[str] = frozenset()
     eye_color_vocab: frozenset[str] = frozenset()
     skipped: int = 0
+    image_root: Optional[Path] = None
 
     source_id: str = SOURCE_ID
+
+    def thumbnail(self, item_id: str) -> Optional[Path]:
+        """Release thumbnail for an item (or variant) ID, if installed."""
+        return existing_file(self.image_root, f"thumb/{item_id}.webp")
+
+    def full_image(self, item_id: str) -> Optional[Path]:
+        return existing_file(self.image_root, f"img/{item_id}.jpg")
+
+    def variant_for_color(self, style_id: str, color_tags: tuple[str, ...]) -> Optional[HairstyleVariant]:
+        """The style's colour variant matching a Hair Color selection (thumbnail use)."""
+        keys = {tag_key(tag) for tag in color_tags}
+        return next((v for v in self.variants.get(style_id, []) if tag_key(v.color_tag) in keys), None)
 
     def get(self, item_id: Optional[str]) -> Optional[CatalogItem]:
         if not item_id:
@@ -159,6 +197,13 @@ class CharaDBCatalog:
 
     def counts(self) -> dict[str, int]:
         return {kind: len(items) for kind, items in self.by_kind.items()}
+
+
+def _color_from_variant_id(item_id: str, parent: str) -> str:
+    """data.js omits "color"; derive it from IDs like ``H001-black``."""
+    prefix = f"{parent}-"
+    suffix = item_id[len(prefix):] if parent and item_id.startswith(prefix) else ""
+    return f"{suffix} hair" if suffix.isalpha() else ""
 
 
 def _unavailable(message: str, path: Optional[Path] = None) -> CharaDBCatalog:
@@ -193,7 +238,7 @@ def build_catalog(entries: list[dict], path: Optional[Path] = None) -> CharaDBCa
 
         if item_set == "hair" and sub == "style_color":
             parent = str(entry.get("parent") or "").strip()
-            color = " ".join(str(entry.get("color") or "").split())
+            color = " ".join(str(entry.get("color") or "").split()) or _color_from_variant_id(item_id, parent)
             if not parent or not color:
                 skipped += 1
                 continue
@@ -280,14 +325,19 @@ def build_catalog(entries: list[dict], path: Optional[Path] = None) -> CharaDBCa
     )
 
 
-def load_catalog(path: Optional[Path]) -> CharaDBCatalog:
+def load_catalog(path: Optional[Path], image_root: Optional[Path] = None) -> CharaDBCatalog:
     """Load CharaDB from ``path``; never raises."""
     if path is None:
         return _unavailable(
-            "CharaDB is not installed. Place items_public.json in vendor/charadb/data/ or set CHARADB_ROOT."
+            "CharaDB is not installed. Place items_public.json (or the release's data.js) "
+            "in vendor/charadb/, or set CHARADB_ROOT."
         )
     try:
         entries = parse_items(Path(path).read_text(encoding="utf-8"))
     except (OSError, ValueError) as error:  # json.JSONDecodeError is a ValueError
         return _unavailable(f"CharaDB index could not be read: {error}", Path(path))
-    return build_catalog(entries, Path(path))
+    catalog = build_catalog(entries, Path(path))
+    catalog.image_root = image_root
+    if catalog.available:
+        catalog.message += " · previews installed" if image_root else " · no preview images (tags only)"
+    return catalog

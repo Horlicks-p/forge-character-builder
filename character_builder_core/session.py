@@ -1,0 +1,351 @@
+"""Character Builder session logic: galleries, choices, prompt refresh and
+send preflight. Pure Python so every rule is testable without Gradio.
+
+Selections are stored as ``BuilderSelection`` (source + ID + mode); image
+paths are always resolved at use time, never kept in UI state.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Iterable, Optional
+
+from . import anhao
+from .assets import PLACEHOLDER_IMAGE
+from .builder import build_character_prompt
+from .charadb_adapter import SOURCE_ID as CHARADB_SOURCE
+from .charadb_adapter import CharaDBCatalog
+from .models import (
+    KIND_HAIR_COLOR,
+    KIND_HAIRSTYLE,
+    KIND_OUTFIT,
+    BuilderSelection,
+    CatalogItem,
+    ItemRef,
+)
+
+PAGE_SIZE = 48
+ALL = "All"
+NONE_LABEL = "None"
+
+STATUS_POSE_SENT = "Pose sent to ControlNet Unit 1"
+STATUS_CONTROLNET_UNAVAILABLE = "ControlNet unavailable"
+STATUS_MISSING_IMAGE = "Missing reference image"
+EDITED_NOTICE = "Final Prompt was edited manually. Press **Reset from selection** to regenerate it."
+
+OUTFIT_SOURCE_LABELS = {
+    CHARADB_SOURCE: "CharaDB (Anime)",
+    anhao.OUTFIT_SOURCE: "Anhao (Original)",
+}
+
+
+class SendError(Exception):
+    """A send preflight failed; the message is shown to the user as-is."""
+
+
+@dataclass
+class BuilderContext:
+    charadb: CharaDBCatalog
+    anhao_root: Optional[Path]
+    placeholder: Path = PLACEHOLDER_IMAGE
+
+    @property
+    def poses_available(self) -> bool:
+        return anhao.library_count(self.anhao_root, "Poses") > 0
+
+    def outfit_sources(self) -> dict[str, anhao.AnhaoOutfits]:
+        """Extra outfit providers for ``build_character_prompt``."""
+        return {anhao.OUTFIT_SOURCE: anhao.AnhaoOutfits(self.anhao_root)} if self.anhao_root else {}
+
+    def outfit_source_choices(self, show_anhao: bool = True) -> list[tuple[str, str]]:
+        choices = []
+        if self.charadb.available:
+            choices.append((OUTFIT_SOURCE_LABELS[CHARADB_SOURCE], CHARADB_SOURCE))
+        if show_anhao and anhao.library_count(self.anhao_root, "Outfits"):
+            choices.append((OUTFIT_SOURCE_LABELS[anhao.OUTFIT_SOURCE], anhao.OUTFIT_SOURCE))
+        return choices
+
+    def status_lines(self) -> list[str]:
+        lines = [self.charadb.message]
+        if self.anhao_root is None:
+            lines.append("Anhao pose data is not installed (see README).")
+        else:
+            lines.append(
+                f"Anhao: {anhao.library_count(self.anhao_root, 'Poses'):,} poses, "
+                f"{anhao.library_count(self.anhao_root, 'Outfits'):,} outfits"
+            )
+        return lines
+
+
+@dataclass(frozen=True)
+class GalleryPage:
+    images: list[tuple[str, str]]
+    ids: list[str]
+    page: int
+    total_pages: int
+    total: int
+
+    @property
+    def info(self) -> str:
+        return f"Page {self.page} of {self.total_pages} · {self.total:,} items"
+
+
+def _paginate(items: list, page: object) -> tuple[list, int, int]:
+    total_pages = max(1, (len(items) + PAGE_SIZE - 1) // PAGE_SIZE)
+    try:
+        page = int(page or 1)
+    except (TypeError, ValueError):
+        page = 1
+    page = max(1, min(page, total_pages))
+    start = (page - 1) * PAGE_SIZE
+    return items[start : start + PAGE_SIZE], page, total_pages
+
+
+def _matches(query: str, *fields: object) -> bool:
+    query = (query or "").strip().casefold()
+    return not query or query in " ".join(str(f or "") for f in fields).casefold()
+
+
+def _caption(item: CatalogItem) -> str:
+    return f"{item.display_name}\n#{item.item_id}"
+
+
+# --- choices -----------------------------------------------------------------
+
+
+def dropdown_choices(ctx: BuilderContext, kind: str) -> list[tuple[str, str]]:
+    """``[("None", ""), (label, item_id), ...]`` for the small CharaDB sets."""
+    return [(NONE_LABEL, "")] + [(item.display_name, item.item_id) for item in ctx.charadb.list_kind(kind)]
+
+
+def ref_or_none(source_id: str, item_id: object) -> Optional[ItemRef]:
+    item_id = str(item_id or "").strip()
+    return ItemRef(source_id, item_id) if item_id else None
+
+
+# --- galleries ---------------------------------------------------------------
+
+
+def hairstyle_page(ctx: BuilderContext, query: str, page: object, hair_color_id: Optional[str] = None) -> GalleryPage:
+    styles = [
+        item
+        for item in ctx.charadb.list_kind(KIND_HAIRSTYLE)
+        if _matches(query, item.item_id, item.display_name, item.category)
+    ]
+    color = ctx.charadb.get(hair_color_id) if hair_color_id else None
+    color_tags = color.normalized_tags if color is not None and color.kind == KIND_HAIR_COLOR else ()
+    page_items, page, total_pages = _paginate(styles, page)
+    images = []
+    for item in page_items:
+        thumb = None
+        variant = ctx.charadb.variant_for_color(item.item_id, color_tags) if color_tags else None
+        if variant is not None:
+            thumb = ctx.charadb.thumbnail(variant.item_id)
+        thumb = thumb or ctx.charadb.thumbnail(item.item_id) or ctx.placeholder
+        images.append((str(thumb), _caption(item)))
+    return GalleryPage(images, [i.item_id for i in page_items], page, total_pages, len(styles))
+
+
+def outfit_items(ctx: BuilderContext, source: str, category: str, query: str, safe_mode: bool) -> list[CatalogItem]:
+    if source == CHARADB_SOURCE:
+        items = ctx.charadb.list_kind(KIND_OUTFIT, safe_mode=safe_mode)
+    elif source == anhao.OUTFIT_SOURCE:
+        items = [anhao.outfit_catalog_item(raw) for raw in anhao.load_library(ctx.anhao_root, "Outfits")]
+        items = [item for item in items if not (safe_mode and item.nsfw)]
+    else:
+        return []
+    category = "" if category in (None, "", ALL) else category
+    return [
+        item
+        for item in items
+        if (not category or item.category == category)
+        and _matches(query, item.item_id, item.display_name, item.raw_tags, item.category)
+    ]
+
+
+def outfit_categories(ctx: BuilderContext, source: str, safe_mode: bool) -> list[str]:
+    return [ALL, *sorted({item.category for item in outfit_items(ctx, source, ALL, "", safe_mode)})]
+
+
+def _outfit_thumb(ctx: BuilderContext, item: CatalogItem) -> Path:
+    if item.source_id == CHARADB_SOURCE:
+        return ctx.charadb.thumbnail(item.item_id) or ctx.placeholder
+    path = anhao.asset_path(ctx.anhao_root, "Outfits", item.metadata, thumbnail=True, use_depth=False)
+    return path if path.is_file() else ctx.placeholder
+
+
+def outfit_page(ctx: BuilderContext, source: str, category: str, query: str, safe_mode: bool, page: object) -> GalleryPage:
+    items = outfit_items(ctx, source, category, query, safe_mode)
+    page_items, page, total_pages = _paginate(items, page)
+    images = [(str(_outfit_thumb(ctx, item)), _caption(item)) for item in page_items]
+    return GalleryPage(images, [i.item_id for i in page_items], page, total_pages, len(items))
+
+
+def pose_filter_options(ctx: BuilderContext, safe_mode: bool) -> tuple[list[str], list[str]]:
+    config = anhao.LIBRARIES["Poses"]
+    return (
+        anhao.option_values(ctx.anhao_root, "Poses", config["primary"], safe_mode),
+        anhao.option_values(ctx.anhao_root, "Poses", config["secondary"], safe_mode),
+    )
+
+
+def pose_page(
+    ctx: BuilderContext,
+    query: str,
+    primary: str,
+    secondary: str,
+    safe_mode: bool,
+    depth: bool,
+    page: object,
+) -> GalleryPage:
+    items = anhao.filtered_items(ctx.anhao_root, "Poses", query, primary, secondary, safe_mode)
+    page_items, page, total_pages = _paginate(items, page)
+    images = []
+    for item in page_items:
+        thumb = anhao.asset_path(ctx.anhao_root, "Poses", item, thumbnail=True, use_depth=depth)
+        images.append((str(thumb if thumb.is_file() else ctx.placeholder), anhao.caption("Poses", item)))
+    return GalleryPage(images, [str(i.get("id", "")) for i in page_items], page, total_pages, len(items))
+
+
+# --- lookups / summaries ------------------------------------------------------
+
+
+def outfit_item(ctx: BuilderContext, ref: Optional[ItemRef]) -> Optional[CatalogItem]:
+    if ref is None:
+        return None
+    if ref.source_id == CHARADB_SOURCE:
+        item = ctx.charadb.get(ref.item_id)
+        return item if item is not None and item.kind == KIND_OUTFIT else None
+    source = ctx.outfit_sources().get(ref.source_id)
+    return source.get(ref.item_id) if source is not None else None
+
+
+def pose_record(ctx: BuilderContext, ref: Optional[ItemRef]) -> Optional[dict]:
+    if ref is None or ref.source_id != anhao.POSE_SOURCE:
+        return None
+    return anhao.find_item(ctx.anhao_root, "Poses", ref.item_id)
+
+
+def hairstyle_summary(ctx: BuilderContext, selection: BuilderSelection) -> str:
+    if selection.hairstyle is None:
+        return "Hairstyle: *none*"
+    style, _ = ctx.charadb.resolve_hairstyle(selection.hairstyle.item_id)
+    if style is None:
+        return f"Hairstyle: *unavailable* (#{selection.hairstyle.item_id})"
+    return f"Hairstyle: **{style.display_name}** (#{style.item_id})"
+
+
+def outfit_summary(ctx: BuilderContext, selection: BuilderSelection) -> tuple[str, str]:
+    """(summary markdown, raw tags) for the selected outfit."""
+    if selection.outfit is None:
+        return "Outfit: *none*", ""
+    item = outfit_item(ctx, selection.outfit)
+    if item is None:
+        return f"Outfit: *unavailable* (#{selection.outfit.item_id})", ""
+    label = OUTFIT_SOURCE_LABELS.get(item.source_id, item.source_id)
+    return f"Outfit: **#{item.item_id}** · {item.category} · {label}", item.raw_tags
+
+
+def pose_mode_label(depth: bool) -> str:
+    return "Depth (preprocessor None)" if depth else "Normal (preprocessor canny)"
+
+
+def pose_summary(ctx: BuilderContext, selection: BuilderSelection) -> tuple[str, Optional[str]]:
+    """(summary markdown, preview thumbnail path) for the selected pose."""
+    record = pose_record(ctx, selection.pose)
+    if selection.pose is None:
+        return "Pose: *none* — select a pose to enable **Send Pose** and **Send All**.", None
+    if record is None:
+        return f"Pose: *unavailable* (#{selection.pose.item_id})", None
+    depth = selection.pose_mode == "depth"
+    thumb = anhao.asset_path(ctx.anhao_root, "Poses", record, thumbnail=True, use_depth=depth)
+    summary = f"Pose: **{anhao.item_title('Poses', record)}** (#{selection.pose.item_id}) · {pose_mode_label(depth)}"
+    return summary, (str(thumb) if thumb.is_file() else str(ctx.placeholder))
+
+
+# --- prompt refresh -----------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class PromptUpdate:
+    appearance: str
+    outfit: str
+    final: str
+    last_generated: str
+    notice: str
+    warnings: tuple[str, ...] = field(default=())
+
+
+def regenerate(
+    ctx: BuilderContext,
+    selection: BuilderSelection,
+    final_text: Optional[str],
+    last_generated: Optional[str],
+    safe_mode: bool,
+    *,
+    force: bool = False,
+) -> PromptUpdate:
+    """Rebuild the prompt; keep a manually edited Final Prompt unless ``force``.
+
+    The Final Prompt counts as edited when it differs from the last text this
+    builder generated.
+    """
+    parts = build_character_prompt(selection, ctx.charadb, outfit_sources=ctx.outfit_sources(), safe_mode=safe_mode)
+    edited = (final_text or "") != (last_generated or "")
+    if force or not edited:
+        final, notice = parts.final, ""
+    else:
+        final, notice = final_text or "", EDITED_NOTICE
+    return PromptUpdate(parts.appearance, parts.outfit, final, parts.final, notice, parts.warnings)
+
+
+def edited_notice(final_text: Optional[str], last_generated: Optional[str]) -> str:
+    return EDITED_NOTICE if (final_text or "") != (last_generated or "") else ""
+
+
+def apply_safe_mode(ctx: BuilderContext, selection: BuilderSelection, safe_mode: bool) -> tuple[BuilderSelection, list[str]]:
+    """Clear selections that Safe mode hides, so they can never be sent."""
+    if not safe_mode:
+        return selection, []
+    notices: list[str] = []
+    outfit = outfit_item(ctx, selection.outfit)
+    if outfit is not None and outfit.nsfw:
+        selection = selection.with_changes(outfit=None)
+        notices.append(f"Outfit #{outfit.item_id} was cleared because Safe mode hides it.")
+    record = pose_record(ctx, selection.pose)
+    if record is not None and anhao.is_nsfw("Poses", record):
+        notices.append(f"Pose #{selection.pose.item_id} was cleared because Safe mode hides it.")
+        selection = selection.with_changes(pose=None)
+    return selection, notices
+
+
+# --- sending ------------------------------------------------------------------
+
+
+def resolve_pose_image(ctx: BuilderContext, selection: BuilderSelection, safe_mode: bool) -> tuple[Path, str]:
+    """Image path and preprocessor for the *current* pose selection."""
+    if selection.pose is None:
+        raise SendError("Select a pose first.")
+    record = pose_record(ctx, selection.pose)
+    if record is None:
+        raise SendError(f"{STATUS_MISSING_IMAGE}: pose #{selection.pose.item_id} is not available.")
+    if safe_mode and anhao.is_nsfw("Poses", record):
+        raise SendError(f"Pose #{selection.pose.item_id} is hidden by Safe mode.")
+    depth = selection.pose_mode == "depth"
+    path = anhao.asset_path(ctx.anhao_root, "Poses", record, thumbnail=False, use_depth=depth)
+    if not path.is_file():
+        raise SendError(f"{STATUS_MISSING_IMAGE}: {path.name}")
+    return path, ("None" if depth else "canny")
+
+
+def preflight_send_all(
+    ctx: BuilderContext, selection: BuilderSelection, final_text: Optional[str], safe_mode: bool
+) -> tuple[Path, str]:
+    if not (final_text or "").strip():
+        raise SendError("Final Prompt is empty. Use **Send Pose** to send only the pose.")
+    return resolve_pose_image(ctx, selection, safe_mode)
+
+
+def join_notices(lines: Iterable[str]) -> str:
+    return "\n".join(f"- {line}" for line in lines if line)
