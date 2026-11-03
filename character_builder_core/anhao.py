@@ -117,6 +117,43 @@ def english_value(value: object) -> str:
     return VALUE_TRANSLATIONS.get(text, text)
 
 
+# The source records each viewpoint separately. A logical pose is identified
+# by both its system and pose number; P001 is reused across different systems.
+POSE_VIEW_ORDER = ("正面", "俯视", "仰视", "侧面", "斜侧")
+
+
+def pose_group_key(item: dict) -> tuple[str, str]:
+    system = str(item.get("体系") or "").strip()
+    number = str(item.get("姿势编号") or "").strip()
+    if system and number:
+        return system, number
+    # Older/custom datasets may omit these fields: keep each ID independent.
+    return "__item__", str(item.get("id", ""))
+
+
+def pose_group_representatives(records: list[dict]) -> list[dict]:
+    """One card per logical pose, preferably showing the front-facing record."""
+    groups: dict[tuple[str, str], list[dict]] = {}
+    for item in records:
+        groups.setdefault(pose_group_key(item), []).append(item)
+    return [next((item for item in group if item.get("角度") == "正面"), group[0]) for group in groups.values()]
+
+
+def pose_views(root: Optional[Path], record: dict) -> list[dict]:
+    """All available viewpoints for the pose, in a stable canonical order."""
+    key = pose_group_key(record)
+    members = [item for item in load_library(root, "Poses") if pose_group_key(item) == key]
+    order = {name: index for index, name in enumerate(POSE_VIEW_ORDER)}
+    return sorted(members, key=lambda item: (order.get(str(item.get("角度", "")), len(order)), str(item.get("id", ""))))
+
+
+def pose_group_caption(root: Optional[Path], record: dict) -> str:
+    number = str(record.get("姿势编号") or record.get("id", ""))
+    category = english_value(record.get("分类", "Pose"))
+    count = len(pose_views(root, record))
+    return f"{category} · {number}\\n{count} view{'s' if count != 1 else ''}"
+
+
 def find_gallery_root(extension_root: Path, environ: Optional[Mapping[str, str]] = None) -> Optional[Path]:
     environ = os.environ if environ is None else environ
     candidates: list[Path] = []
