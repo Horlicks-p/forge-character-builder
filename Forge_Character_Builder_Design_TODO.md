@@ -1,6 +1,6 @@
 # Forge Character Builder 功能設計書 / TODO
 
-> **文件版本：** v1.2（2026-11-03；見文末「修訂紀錄」）  
+> **文件版本：** v1.3（2026-11-03；見文末「修訂紀錄」）  
 > **目標專案：** https://github.com/Horlicks-p/forge-character-builder  
 > **目標執行環境：** [Haoming02/sd-webui-forge-classic](https://github.com/Haoming02/sd-webui-forge-classic) `neo` 分支、Gradio 4.40.0、Neo 內建 ControlNet（`sd_forge_controlnet`）。  
 > **用途：** 交由 Claude Code / Codex 實作的技術規格與驗收清單  
@@ -11,7 +11,7 @@
 
 ## 0. 寫給實作者的執行指示（請優先閱讀）
 
-1. **先審查現有程式碼、分支與 PR，不要直接重寫專案。** 首先確認 `main` 與 `fix/p0-canny-prompt-commas` / PR #1 的狀態。2026-11-03 查核時，PR #1 **尚未合併**，其中包含 Canny 預設與服裝 Prompt 逗號格式化。此狀態可能在實作前改變，需重新確認。**以最新實際分支為準，避免覆蓋 P0。**
+1. **先審查現有程式碼、分支與 PR，不要直接重寫專案。** 開工前以 GitHub 上的實際狀態為準（見下方 0.1），避免覆蓋已合併或待驗收的變更。
 2. 本次任務以**新增 Character Builder、共用資料轉換層、整合現有 Pose / ControlNet** 為主；禁止不必要的大規模重構。
 3. 使用者**已自行在本機放置 Anhao 圖片資料**。請勿重新下載、搬移、覆寫、刪除或提交該圖片包。
 4. **所有第三方圖片必須與外掛程式碼分離。** 外掛的 Git 倉庫不得包含來自 Anhao、ギア、CharaDB 或 Anime Costume Gallery 的原圖／縮圖；不得做未經授權的批次下載或重新分發。
@@ -19,6 +19,18 @@
 6. **唯一驗收環境為 Forge Neo**（`Haoming02/sd-webui-forge-classic` 的 `neo` 分支、Gradio 4.40.0、Neo 內建 ControlNet）及 `txt2img`。Forge Classic 與 AUTOMATIC1111 無印版**不列入 MVP 相容範圍**，不要為它們加入雙版本相容層。保留現有 `img2img` 功能，但不用新增 ComfyUI、雲端生圖 API、IP-Adapter 或 LoRA 管理介面。
    - 本文件的 Neo 原始碼審查快照為 commit `7d6fd36`（2026-11-03）。這**只是審查依據，不是永久依賴**；`neo` 仍持續更新，實機驗收時須記錄當時實際的 Neo commit SHA。
 7. 變更請以**小 PR** 交付，每個 PR 有驗收步驟、測試結果與已知限制。**不要直接推送到 main**；除非使用者另行指示。
+
+### 0.1 目前 PR 狀態（2026-11-03 查核）
+
+| PR | 內容 | 分支 → base | 狀態 |
+| --- | --- | --- | --- |
+| #1 | P0：Canny 預設、Outfit Prompt 逗號格式化 | `fix/p0-canny-prompt-commas` → `main` | **已合併** |
+| #2 | Phase 1：CharaDB adapter、Prompt core、更名 Forge Character Builder | `feat/phase1-charadb-prompt-core` → `main` | **已合併** |
+| #3 | Phase 2：Character Builder UI + Send All（MVP） | `feat/phase2-character-builder-ui` → `main` | **開啟中（Draft）**，待 Forge Neo 實機驗收 |
+| #4 | Phase 4A：Source UX（來源狀態、安裝提示、顯示設定）與 stale selection 修正 | `feat/phase4-source-ux` → `feat/phase2-character-builder-ui`（stacked） | **開啟中（Draft）**，待實機驗收；PR #3 合併後 rebase 到 `main` |
+
+- PR #3、#4 的程式只在 Gradio 4.40 harness + Playwright 驗證過，**不等於實機驗收**；合併前提是在 Forge Neo 完成各 PR 內的驗收清單。
+- Phase 3 為 **Deferred**，不阻塞其他 Phase。
 
 ## 1. 背景與需求摘要
 
@@ -198,6 +210,9 @@ Neo 使用 Gradio 4.40.0，巢狀 `gr.Tabs` 可正常使用；**仍以實際相�
 
 - 保留原本 SFW 預設開啟及分類過濾；新的服裝 Provider 也要映射成人類別，而不是只過濾 Anhao。
 - 安全模式開啟時，已選但被切掉的素材要清除選擇，提示使用者；不得保留隱藏素材繼續送出。
+- 若 Final Prompt 曾手動編輯（dirty），清除 Outfit 後**保留**使用者文字，但必須提示「可能仍含已清除服裝的 tags」，不得只說已清除。Pose 在 MVP 不輸出 tags，清除 Pose 不需此提示。
+- 切換 Outfit 來源（CharaDB／Anhao）時，清除另一來源的 Outfit 選擇；Final Prompt 依 dirty-state 規則處理（未編輯則重建，已編輯則保留並提示）。
+- Legacy Pose Gallery 的選取只記錄「library + ID」，送出時才依**當下的** Normal／Depth 一起決定圖片與 Preprocessor，兩者不可能不一致；切換 Normal／Depth 時預覽同步更新；Safe Mode 開啟後不得送出已隱藏的項目。
 - 縮圖分頁／按需載入；至少保持目前「每頁 48 張」的操作上限或等效虛擬列表；不要一次向 Gradio 傳入千張圖片。
 - 計數從啟用的來源與實際 catalog 算出，不要保留寫死的 `4,345 REFERENCE IMAGES`。
 
@@ -382,10 +397,10 @@ class CatalogItem:
 
 ### Phase 0 — Baseline & P0 整合（先做）
 
-- [ ] 確認 `main` 與 PR #1 的實際狀態，整合 `canny` 預設與 Outfit 逗號分隔，不得重覆實作衝突版本。
+- [x] 確認 `main` 與 PR #1 的實際狀態，整合 `canny` 預設與 Outfit 逗號分隔，不得重覆實作衝突版本。（PR #1 已合併）
 - [ ] 在 Forge Neo 實機記錄當時的 Neo commit SHA，以及 ControlNet preprocessor Dropdown 中 `canny` 的實際名稱；保留可回滾的原始狀態。
-- [x] 將現有 `Send to txt2img + ControlNet 1` 的 `.then()` 改為 `.success()`（已併入 Phase 1 分支；待實機驗證）。
-- [ ] 確認 `vendor` 資料目錄未被 Git track；檢查 `.gitignore`。
+- [x] 將現有 `Send to txt2img + ControlNet 1` 的 `.then()` 改為 `.success()`（已隨 PR #2 合併；待實機驗證）。
+- [x] 確認 `vendor` 資料目錄未被 Git track；檢查 `.gitignore`。（`.gitignore` 含 `vendor/`）
 - [ ] 先執行現有功能的 smoke test：Pose browse / Depth / Append Prompt / Send to txt2img ControlNet / img2img。
 
 **完成條件：** 原有外掛在新增模組前就可啟動，Pose Normal / Depth 路徑與既有傳送行為正常。
@@ -403,7 +418,7 @@ class CatalogItem:
 - [x] CharaDB 原始逗號 tags 保留多字詞組、顏色選擇不互相衝突。
 - [x] 增加不依賴 Gradio / Forge 的單元測試與少量自製 fixture。
 
-> 狀態：已在分支 `feat/phase1-charadb-prompt-core` 完成（2026-11-03），40 項單元測試通過，含對真實 `items_public.json`（1,027 筆）的驗證。
+> 狀態：**已合併**（PR #2，2026-11-03）。40 項單元測試通過，含對真實 `items_public.json`（1,027 筆）的驗證。
 
 **完成條件：** 可在純 Python 測試中從 CharaDB 真實格式選出 hair + eyes + outfit 的合理 tags，空選擇與顏色變更都正確。
 
@@ -416,7 +431,7 @@ class CatalogItem:
 - [x] `Send All` 的預處理器正確，保留既有 Prompt、LoRA、Negative Prompt、ControlNet 模型。
 - [x] 既有 Gallery 操作保持可用；不要直接刪除 Portraits 或 img2img 功能。
 
-> 狀態：程式已在分支 `feat/phase2-character-builder-ui` 完成（2026-11-03），並以 Gradio 4.40 模擬 Forge 的 harness + Playwright 驗證；上列勾選代表 harness 驗證通過。**實機 Forge Neo 驗收（下方完成條件）仍待完成，為合併前提。**
+> 狀態：**PR #3 開啟中（Draft）**。程式已在分支 `feat/phase2-character-builder-ui` 完成，並以 Gradio 4.40 模擬 Forge 的 harness + Playwright 驗證；上列勾選代表 harness 驗證通過。**實機 Forge Neo 驗收（下方完成條件）仍待完成，為合併前提。**
 
 **完成條件：** 在實際 Forge Neo + ControlNet 上完成一輪「Hair + Eyes + CharaDB Outfit + Anhao Pose → Send All（`.success()`）→ txt2img Prompt + ControlNet Unit 1」，並記錄驗收時的 Neo commit SHA。這是本專案**最重要的 MVP 交付點**。
 
@@ -437,7 +452,7 @@ class CatalogItem:
 
 ### Phase 4 — UX / 相容性改善（選做，MVP 後）
 
-> Phase 4A「Source UX」在分支 `feat/phase4-source-ux`（stacked on Phase 2）完成前兩項；其餘項目**暫緩，待 PR #3 實機驗收後**再評估。
+> Phase 4A「Source UX」：**PR #4 開啟中（Draft）**，分支 `feat/phase4-source-ux`（stacked on PR #3），完成前兩項，並修正 4.6 所列的三個 stale selection 問題。其餘項目**暫緩，待 PR #3 實機驗收後**再評估。
 
 - [x] Portraits 預設隱藏但可啟用；Anhao 寫實 Outfit 可啟閉。（Phase 4A：Forge Settings，需 Reload UI）
 - [x] 動態來源數量、來源健康狀態、清楚的資料安裝提示。（Phase 4A）
@@ -522,7 +537,10 @@ class CatalogItem:
 ### 確認過的來源
 
 - 專案本體：https://github.com/Horlicks-p/forge-character-builder
-- P0 PR #1：https://github.com/Horlicks-p/forge-character-builder/pull/1
+- P0 PR #1（已合併）：https://github.com/Horlicks-p/forge-character-builder/pull/1
+- Phase 1 PR #2（已合併）：https://github.com/Horlicks-p/forge-character-builder/pull/2
+- Phase 2 PR #3（Draft，待實機驗收）：https://github.com/Horlicks-p/forge-character-builder/pull/3
+- Phase 4A PR #4（Draft，stacked on #3，待實機驗收）：https://github.com/Horlicks-p/forge-character-builder/pull/4
 - CharaDB 原始專案與 JSON：https://github.com/taki-ttt/charadb ／ https://github.com/taki-ttt/charadb/blob/main/data/items_public.json
 - CharaDB LICENSE：https://github.com/taki-ttt/charadb/blob/main/LICENSE
 - CharaDB 官方 Release（選用圖片包）：https://github.com/taki-ttt/charadb/releases/tag/v1.0
@@ -557,7 +575,7 @@ class CatalogItem:
 
 ## 12. 可直接貼給 Claude Code / Codex 的開工 Prompt
 
-> 請先閱讀本檔全部內容，再讀取 `Horlicks-p/forge-character-builder` 的最新 `main` 與開啟中的 PR，尤其確認 P0 PR #1 是否已合併。目標環境只有 Forge Neo（`Haoming02/sd-webui-forge-classic` 的 `neo` 分支、Gradio 4.40.0）。不要重寫外掛、不要下載或提交第三方圖片、不要直接改 main。請依 **Phase 0 → Phase 1 → Phase 2 →（非阻塞）Phase 3 → Phase 4** 的順序拆成小 PR。第一個目標是在根目錄 `character_builder_core/` 完成 CharaDB 資料 adapter、Danbooru Prompt Builder 與測試；第二個目標是在既有 Forge UI 完成「髮型／眼睛 + 服裝 + Anhao Pose → Send All（`.success()`）→ txt2img Prompt + ControlNet Unit 1」的 MVP；Anime Costume 只是可取消的擴充。髮型預設色不輸出，MVP 不輸出 Pose tags。請保留 `img2img`、Depth／Canny、原有 vendor 路徑、Safe Mode 與所有 LoRA／Prompt 內容；遇到任何素材授權或 URL／版本不確定的地方，採可降級設計、記錄限制，**不要猜測欄位後直接大量抓圖**。每個 PR 請附變更清單、測試結果、回歸檢查與人工驗收步驟。
+> 請先閱讀本檔全部內容，再讀取 `Horlicks-p/forge-character-builder` 的最新 `main` 與開啟中的 PR（0.1 節列出 2026-11-03 的狀態，開工前需重新確認）。目標環境只有 Forge Neo（`Haoming02/sd-webui-forge-classic` 的 `neo` 分支、Gradio 4.40.0）。不要重寫外掛、不要下載或提交第三方圖片、不要直接改 main。請依 **Phase 0 → Phase 1 → Phase 2 →（非阻塞）Phase 3 → Phase 4** 的順序拆成小 PR。第一個目標是在根目錄 `character_builder_core/` 完成 CharaDB 資料 adapter、Danbooru Prompt Builder 與測試；第二個目標是在既有 Forge UI 完成「髮型／眼睛 + 服裝 + Anhao Pose → Send All（`.success()`）→ txt2img Prompt + ControlNet Unit 1」的 MVP；Anime Costume 只是可取消的擴充。髮型預設色不輸出，MVP 不輸出 Pose tags。請保留 `img2img`、Depth／Canny、原有 vendor 路徑、Safe Mode 與所有 LoRA／Prompt 內容；遇到任何素材授權或 URL／版本不確定的地方，採可降級設計、記錄限制，**不要猜測欄位後直接大量抓圖**。每個 PR 請附變更清單、測試結果、回歸檢查與人工驗收步驟。
 
 ---
 
@@ -568,6 +586,12 @@ class CatalogItem:
 ---
 
 ## 修訂紀錄
+
+- **v1.3（2026-11-03）** 反映實際進度與審查修正：
+  - 新增 0.1「目前 PR 狀態」：PR #1、#2 已合併；PR #3（Phase 2）與 PR #4（Phase 4A，stacked）為 Draft、待 Forge Neo 實機驗收。
+  - Phase 0 已確認項目打勾（PR #1 合併、`vendor/` 已忽略）；Phase 1 標為已合併。
+  - Phase 3 維持 Deferred；Phase 4A 範圍與暫緩項目說明。
+  - 4.6 補充 stale selection 規則：Outfit 來源切換清除舊選擇、dirty Final Prompt 的清除提示、Legacy Gallery 送出時才解析圖片與 Preprocessor。
 
 - **v1.2（2026-11-03）** 專案更名為 **Forge Character Builder**（repo `forge-character-builder`）：
   - 套件 `ai_pose_gallery_core` → `character_builder_core`；入口 `scripts/character_builder.py`；JS `javascript/character_builder.js`（`appendCharacterBuilderPrompt`）。
