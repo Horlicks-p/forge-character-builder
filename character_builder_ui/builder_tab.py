@@ -405,7 +405,7 @@ def build_builder_tab(
         updated = session.select_pose_angle(ctx, sel, item_id)
         return view(updated, final, last, safe)
 
-    pose_angle.change(
+    pose_angle.input(
         change_pose_angle, [pose_angle, selection, *prompt_inputs], view_outputs, show_progress=False
     )
 
