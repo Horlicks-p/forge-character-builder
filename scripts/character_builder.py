@@ -1,9 +1,6 @@
 from __future__ import annotations
 
-import json
-import os
 import random
-from functools import lru_cache
 from pathlib import Path
 
 import gradio as gr
@@ -14,247 +11,38 @@ from modules import infotext_utils, script_callbacks
 
 # Forge Neo adds the extension root to sys.path, so the shared core package
 # (kept outside scripts/ so Forge does not load it as a script) imports directly.
-from character_builder_core.prompts import format_outfit_keywords
+from character_builder_core import anhao, charadb_adapter, session
+from character_builder_ui.builder_tab import build_builder_tab
 
 
 EXTENSION_ROOT = Path(__file__).resolve().parent.parent
 PAGE_SIZE = 48
 
-LIBRARIES = {
-    "Poses": {
-        "key": "pose",
-        "file": "pose-zh.json",
-        "primary": "体系",
-        "primary_label": "System",
-        "secondary": "分类",
-        "secondary_label": "Category",
-        "thumb": "缩略图",
-        "image": "原图",
-    },
-    "Outfits": {
-        "key": "costume",
-        "file": "costume-zh.json",
-        "primary": "分类",
-        "primary_label": "Category",
-        "secondary": None,
-        "secondary_label": None,
-        "thumb": "缩略图",
-        "image": "原图",
-    },
-    "Portraits": {
-        "key": "portrait",
-        "file": "portrait-zh.json",
-        "primary": "分区",
-        "primary_label": "Section",
-        "secondary": "发长",
-        "secondary_label": "Hair length",
-        "thumb": "缩略图",
-        "image": "原图",
-    },
-}
-
-NSFW_POSE_SYSTEMS = {"全身單人・性感系", "全身单人・性感系", "雙人纏綿", "双人缠绵"}
-NSFW_COSTUME_CATEGORIES = {"內衣・睡衣", "内衣・睡衣", "性感穿搭"}
-
-VALUE_TRANSLATIONS = {
-    "上半身单人": "Single-person upper body",
-    "双人缠绵": "Intimate pair",
-    "全身单人・性感系": "Single-person full body — sensual",
-    "全身单人・标准系": "Single-person full body — standard",
-    "可爱系": "Cute",
-    "正常位（传教士）": "Missionary position",
-    "立位": "Standing position",
-    "立位贴身": "Close standing",
-    "后入位": "Rear-entry position",
-    "后仰・挺背": "Leaning back / arched back",
-    "坐位": "Seated position",
-    "坐位贴身": "Close seated",
-    "坐姿": "Sitting",
-    "扭身": "Twisting",
-    "侧坐・女孩坐": "Side sitting",
-    "侧卧位": "Side-lying position",
-    "性感・大胆系": "Sensual / bold",
-    "前倾": "Leaning forward",
-    "挤胸・强调事业线系": "Emphasized cleavage",
-    "背向坐位": "Back-facing seated",
-    "贴身": "Close contact",
-    "贴脸系": "Face close-up",
-    "趴卧": "Lying prone",
-    "面对面坐位": "Face-to-face seated",
-    "特殊": "Special",
-    "站姿": "Standing",
-    "骑乘位": "Riding position",
-    "跪立": "Kneeling",
-    "跪立・四肢着地": "Kneeling / all fours",
-    "蹲姿": "Squatting",
-    "正面": "Front",
-    "仰视": "Low angle",
-    "侧面": "Side",
-    "俯视": "High angle",
-    "斜侧": "Three-quarter",
-    "内衣・睡衣": "Lingerie / sleepwear",
-    "冬季穿搭": "Winter outfits",
-    "性感穿搭": "Sensual outfits",
-    "泳装・度假": "Swimwear / resort",
-    "春季穿搭": "Spring outfits",
-    "派对・礼服": "Party / formalwear",
-    "秋季穿搭": "Autumn outfits",
-    "夏季穿搭": "Summer outfits",
-    "正脸参考": "Face reference",
-    "造型氛围": "Styled portrait",
-    "中发": "Medium hair",
-    "中长发": "Medium-long hair",
-    "长发": "Long hair",
-    "短发": "Short hair",
-}
+# Anhao data access lives in character_builder_core.anhao (shared with the
+# Character Builder). These thin wrappers keep the legacy call sites unchanged.
+GALLERY_ROOT = anhao.find_gallery_root(EXTENSION_ROOT)
+LIBRARIES = anhao.LIBRARIES
+_english_value = anhao.english_value
+_is_nsfw = anhao.is_nsfw
+_item_title = anhao.item_title
+_prompt_for = anhao.prompt_for
+_caption = anhao.caption
 
 
-def _english_value(value: object) -> str:
-    text = str(value or "").strip()
-    return VALUE_TRANSLATIONS.get(text, text)
-
-
-def _find_gallery_root() -> Path | None:
-    candidates: list[Path] = []
-    # ANHAO_GALLERY_ROOT is preferred; AI_POSE_GALLERY_ROOT is kept for compatibility.
-    configured = (os.environ.get("ANHAO_GALLERY_ROOT") or os.environ.get("AI_POSE_GALLERY_ROOT") or "").strip()
-    if configured:
-        candidates.append(Path(configured))
-
-    candidates.extend(
-        [
-            EXTENSION_ROOT / "vendor",
-            EXTENSION_ROOT.parent / "ai-pose-gallery-zh",
-        ]
-    )
-
-    for candidate in candidates:
-        candidate = candidate.expanduser().resolve()
-        if (candidate / "data" / "pose-zh.json").is_file():
-            return candidate
-    return None
-
-
-GALLERY_ROOT = _find_gallery_root()
-
-
-@lru_cache(maxsize=3)
 def _load_library(label: str) -> tuple[dict, ...]:
-    if GALLERY_ROOT is None:
-        return tuple()
-
-    config = LIBRARIES[label]
-    path = GALLERY_ROOT / "data" / config["file"]
-    with path.open("r", encoding="utf-8") as handle:
-        return tuple(json.load(handle))
+    return anhao.load_library(GALLERY_ROOT, label)
 
 
-def _is_nsfw(label: str, item: dict) -> bool:
-    if label == "Poses":
-        return item.get("体系", "") in NSFW_POSE_SYSTEMS
-    if label == "Outfits":
-        return item.get("分类", "") in NSFW_COSTUME_CATEGORIES
-    return False
-
-
-def _filtered_items(
-    label: str,
-    query: str,
-    primary: str,
-    secondary: str,
-    safe_mode: bool,
-) -> list[dict]:
-    config = LIBRARIES[label]
-    normalized_query = (query or "").strip().casefold()
-    primary = "" if primary in (None, "", "All") else primary
-    secondary = "" if secondary in (None, "", "All") else secondary
-
-    results: list[dict] = []
-    for item in _load_library(label):
-        if safe_mode and _is_nsfw(label, item):
-            continue
-        if primary and _english_value(item.get(config["primary"], "")) != primary:
-            continue
-        if secondary and config["secondary"] and _english_value(item.get(config["secondary"], "")) != secondary:
-            continue
-        if normalized_query:
-            english_fields = " ".join(
-                _english_value(item.get(field, ""))
-                for field in (config["primary"], config["secondary"])
-                if field
-            )
-            haystack = f"{item.get('id', '')} {english_fields} {_prompt_for(label, item)}".casefold()
-            if normalized_query not in haystack:
-                continue
-        results.append(item)
-    return results
+def _filtered_items(label: str, query: str, primary: str, secondary: str, safe_mode: bool) -> list[dict]:
+    return anhao.filtered_items(GALLERY_ROOT, label, query, primary, secondary, safe_mode)
 
 
 def _option_values(label: str, field: str | None, safe_mode: bool) -> list[str]:
-    if not field:
-        return ["All"]
-    values = {
-        _english_value(item.get(field, ""))
-        for item in _load_library(label)
-        if item.get(field) and (not safe_mode or not _is_nsfw(label, item))
-    }
-    return ["All", *sorted(values)]
-
-
-def _depth_path(item: dict) -> Path:
-    raw = str(item.get("原图", "")).replace("\\", "/").lstrip("/")
-    if raw.startswith("img/"):
-        stem = raw[len("img/") :].rsplit(".", 1)[0]
-        return GALLERY_ROOT / "img" / "depth" / f"{stem}.webp"
-    return GALLERY_ROOT / raw
+    return anhao.option_values(GALLERY_ROOT, label, field, safe_mode)
 
 
 def _asset_path(label: str, item: dict, *, thumbnail: bool, use_depth: bool) -> Path:
-    if label == "Poses" and use_depth:
-        if thumbnail:
-            raw = str(item.get("原图", "")).replace("\\", "/").lstrip("/")
-            stem = raw[len("img/") :].rsplit(".", 1)[0] if raw.startswith("img/") else Path(raw).stem
-            depth_thumb = GALLERY_ROOT / "thumbs" / "depth" / f"{stem}.webp"
-            if depth_thumb.is_file():
-                return depth_thumb
-        return _depth_path(item)
-
-    config = LIBRARIES[label]
-    field = config["thumb"] if thumbnail else config["image"]
-    raw = str(item.get(field, "")).replace("\\", "/").lstrip("/")
-    return GALLERY_ROOT / raw
-
-
-def _item_title(label: str, item: dict) -> str:
-    item_id = str(item.get("id", "Untitled"))
-    if label == "Poses":
-        category = _english_value(item.get("分类", "Pose"))
-        return f"{category} pose"
-    if label == "Outfits":
-        return f"Outfit {item_id}"
-    hair_length = _english_value(item.get("发长", ""))
-    return f"{hair_length or 'Portrait'} reference"
-
-
-def _prompt_for(label: str, item: dict) -> str:
-    if label == "Poses":
-        angle = _english_value(item.get("角度", ""))
-        category = _english_value(item.get("分类", ""))
-        system = _english_value(item.get("体系", ""))
-        return ", ".join(part for part in [f"{angle} view" if angle else "", category, system, "character pose reference"] if part)
-
-    if label == "Outfits":
-        english = format_outfit_keywords(item.get("关键词", ""))
-        return ", ".join(part for part in [english, "detailed outfit"] if part)
-
-    section = _english_value(item.get("分区", ""))
-    hair_length = _english_value(item.get("发长", ""))
-    return ", ".join(part for part in ["character portrait reference", section, hair_length] if part)
-
-
-def _caption(label: str, item: dict) -> str:
-    title = _item_title(label, item)
-    return f"{title}\n#{item.get('id', '')}"
+    return anhao.asset_path(GALLERY_ROOT, label, item, thumbnail=thumbnail, use_depth=use_depth)
 
 
 def _render_gallery(
@@ -393,169 +181,192 @@ def _image_for_controlnet(path: str, label: str, use_depth: bool):
     return array, True, "None"
 
 
+def _find_controlnet_target():
+    """txt2img ControlNet Unit 1 (the first non-img2img group in Forge Neo)."""
+    try:
+        from lib_controlnet.controlnet_ui.controlnet_ui_group import ControlNetUiGroup
+
+        return next((group for group in ControlNetUiGroup.all_ui_groups if not group.is_img2img), None)
+    except Exception:
+        return None
+
+
+def _builder_context() -> session.BuilderContext:
+    items_file = charadb_adapter.find_items_file(EXTENSION_ROOT)
+    image_root = charadb_adapter.find_image_root(EXTENSION_ROOT)
+    return session.BuilderContext(charadb=charadb_adapter.load_catalog(items_file, image_root), anhao_root=GALLERY_ROOT)
+
+
+def _reference_count(ctx: session.BuilderContext) -> int:
+    charadb_count = sum(len(ctx.charadb.list_kind(kind)) for kind in ctx.charadb.by_kind if kind != "pose")
+    return charadb_count + sum(anhao.library_count(GALLERY_ROOT, label) for label in LIBRARIES)
+
+
 def _gallery_ui():
     source_status = (
         f"Data source: {GALLERY_ROOT}"
         if GALLERY_ROOT is not None
         else "Gallery data is not installed. Follow the README to add the ai-pose-gallery-zh dataset."
     )
+    target = _find_controlnet_target()
+    ctx = _builder_context()
 
     with gr.Blocks(elem_id="forge_character_builder") as interface:
         gr.HTML(
-            """
+            f"""
             <header class="fcb-hero">
               <div>
                 <h1>Forge Character Builder</h1>
-                <p>Browse pose, outfit, and portrait references for your Forge workflow.</p>
+                <p>Build Danbooru-style character prompts and send a pose to ControlNet.</p>
               </div>
-              <div class="fcb-count">4,345 <span>REFERENCE IMAGES</span></div>
+              <div class="fcb-count">{_reference_count(ctx):,} <span>REFERENCES</span></div>
             </header>
             """
         )
 
-        with gr.Row(elem_classes=["fcb-toolbar"]):
-            library = gr.Radio(list(LIBRARIES), value="Poses", label="Library", elem_classes=["fcb-library"])
-            search = gr.Textbox(label="Search", placeholder="Category, type, or ID", scale=3)
-            search_button = gr.Button("Search", variant="secondary", scale=0, min_width=90)
-            random_button = gr.Button("Random pick", variant="secondary", scale=0, min_width=110)
+        with gr.Tabs():
+            with gr.Tab("Character Builder"):
+                builder_load, builder_outputs = build_builder_tab(ctx, target)
 
-        with gr.Row(elem_classes=["fcb-filters"]):
-            primary = gr.Dropdown(["All"], value="All", label="System")
-            secondary = gr.Dropdown(["All"], value="All", label="Category")
-            safe_mode = gr.Checkbox(value=True, label="Safe mode (hide 18+)")
-            use_depth = gr.Checkbox(value=False, label="Use depth image")
+            with gr.Tab("Pose Gallery"):
+                with gr.Row(elem_classes=["fcb-toolbar"]):
+                    library = gr.Radio(list(LIBRARIES), value="Poses", label="Library", elem_classes=["fcb-library"])
+                    search = gr.Textbox(label="Search", placeholder="Category, type, or ID", scale=3)
+                    search_button = gr.Button("Search", variant="secondary", scale=0, min_width=90)
+                    random_button = gr.Button("Random pick", variant="secondary", scale=0, min_width=110)
 
-        page = gr.State(1)
-        item_ids = gr.State([])
-        selected_path = gr.State("")
+                with gr.Row(elem_classes=["fcb-filters"]):
+                    primary = gr.Dropdown(["All"], value="All", label="System")
+                    secondary = gr.Dropdown(["All"], value="All", label="Category")
+                    safe_mode = gr.Checkbox(value=True, label="Safe mode (hide 18+)")
+                    use_depth = gr.Checkbox(value=False, label="Use depth image")
 
-        with gr.Row(elem_classes=["fcb-workbench"]):
-            with gr.Column(scale=4, elem_classes=["fcb-browser"]):
-                gallery = gr.Gallery(
-                    label="References",
-                    columns=6,
-                    rows=2,
-                    height=590,
-                    object_fit="contain",
-                    allow_preview=False,
-                    show_download_button=False,
-                    show_share_button=False,
-                    elem_classes=["fcb-gallery"],
+                page = gr.State(1)
+                item_ids = gr.State([])
+                selected_path = gr.State("")
+
+                with gr.Row(elem_classes=["fcb-workbench"]):
+                    with gr.Column(scale=4, elem_classes=["fcb-browser"]):
+                        gallery = gr.Gallery(
+                            label="References",
+                            columns=6,
+                            rows=2,
+                            height=590,
+                            object_fit="contain",
+                            allow_preview=False,
+                            show_download_button=False,
+                            show_share_button=False,
+                            elem_classes=["fcb-gallery"],
+                        )
+                        with gr.Row(elem_classes=["fcb-pagination"]):
+                            previous = gr.Button("Previous", min_width=90)
+                            page_info = gr.Markdown("Loading…", elem_classes=["fcb-page-info"])
+                            following = gr.Button("Next", min_width=90)
+
+                    with gr.Column(scale=2, min_width=320, elem_classes=["fcb-inspector"]):
+                        selected_image = gr.Image(
+                            label="Selected reference",
+                            type="pil",
+                            height=360,
+                            interactive=False,
+                            show_download_button=True,
+                            elem_classes=["fcb-selected-image"],
+                        )
+                        selection_details = gr.Textbox(label="Reference details", lines=3, interactive=False)
+                        prompt = gr.Textbox(
+                            label="Prompt",
+                            lines=5,
+                            placeholder="Select a reference to generate an editable prompt",
+                            show_copy_button=True,
+                        )
+                        send_controlnet = gr.Button("Send to txt2img + ControlNet 1", variant="primary")
+                        send_img2img = gr.Button("Send to img2img", variant="secondary")
+                        send_prompt = gr.Button("Append prompt to txt2img", variant="secondary")
+                        gr.Markdown(
+                            "Depth images use the `None` preprocessor. Regular pose images preselect `canny`. Choose the ControlNet model separately.",
+                            elem_classes=["fcb-help"],
+                        )
+
+                gr.Markdown(source_status, elem_classes=["fcb-source-status"])
+
+                outputs = [gallery, item_ids, page, page_info, primary, secondary, use_depth]
+                refresh_inputs = [library, search, primary, secondary, safe_mode, use_depth, page]
+
+                interface.load(
+                    fn=lambda: _refresh("Poses", "", "All", "All", True, False, 1),
+                    outputs=outputs,
+                    show_progress=False,
                 )
-                with gr.Row(elem_classes=["fcb-pagination"]):
-                    previous = gr.Button("Previous", min_width=90)
-                    page_info = gr.Markdown("Loading…", elem_classes=["fcb-page-info"])
-                    following = gr.Button("Next", min_width=90)
+                library.change(
+                    fn=_change_library,
+                    inputs=[library, search, safe_mode, use_depth],
+                    outputs=outputs,
+                    show_progress=False,
+                )
+                search.submit(fn=_reset_page, inputs=refresh_inputs, outputs=outputs, show_progress=False)
+                search_button.click(fn=_reset_page, inputs=refresh_inputs, outputs=outputs, show_progress=False)
+                primary.change(fn=_reset_page, inputs=refresh_inputs, outputs=outputs, show_progress=False)
+                secondary.change(fn=_reset_page, inputs=refresh_inputs, outputs=outputs, show_progress=False)
+                safe_mode.change(fn=_reset_page, inputs=refresh_inputs, outputs=outputs, show_progress=False)
+                use_depth.change(fn=_reset_page, inputs=refresh_inputs, outputs=outputs, show_progress=False)
 
-            with gr.Column(scale=2, min_width=320, elem_classes=["fcb-inspector"]):
-                selected_image = gr.Image(
-                    label="Selected reference",
-                    type="pil",
-                    height=360,
-                    interactive=False,
-                    show_download_button=True,
-                    elem_classes=["fcb-selected-image"],
+                previous.click(fn=lambda value: _move_page(value, -1), inputs=[page], outputs=[page], show_progress=False).then(
+                    fn=_refresh, inputs=refresh_inputs, outputs=outputs, show_progress=False
                 )
-                selection_details = gr.Textbox(label="Reference details", lines=3, interactive=False)
-                prompt = gr.Textbox(
-                    label="Prompt",
-                    lines=5,
-                    placeholder="Select a reference to generate an editable prompt",
-                    show_copy_button=True,
-                )
-                send_controlnet = gr.Button("Send to txt2img + ControlNet 1", variant="primary")
-                send_img2img = gr.Button("Send to img2img", variant="secondary")
-                send_prompt = gr.Button("Append prompt to txt2img", variant="secondary")
-                gr.Markdown(
-                    "Depth images use the `None` preprocessor. Regular pose images preselect `canny`. Choose the ControlNet model separately.",
-                    elem_classes=["fcb-help"],
+                following.click(fn=lambda value: _move_page(value, 1), inputs=[page], outputs=[page], show_progress=False).then(
+                    fn=_refresh, inputs=refresh_inputs, outputs=outputs, show_progress=False
                 )
 
-        gr.Markdown(source_status, elem_classes=["fcb-source-status"])
+                gallery.select(
+                    fn=_select_item,
+                    inputs=[library, use_depth, item_ids],
+                    outputs=[selected_image, selected_path, prompt, selection_details],
+                    show_progress=False,
+                )
+                random_button.click(
+                    fn=_random_item,
+                    inputs=[library, search, primary, secondary, safe_mode, use_depth],
+                    outputs=[selected_image, selected_path, prompt, selection_details],
+                    show_progress=False,
+                )
 
-        outputs = [gallery, item_ids, page, page_info, primary, secondary, use_depth]
-        refresh_inputs = [library, search, primary, secondary, safe_mode, use_depth, page]
+                infotext_utils.register_paste_params_button(
+                    infotext_utils.ParamBinding(
+                        paste_button=send_img2img,
+                        tabname="img2img",
+                        source_image_component=selected_image,
+                    )
+                )
 
-        interface.load(
-            fn=lambda: _refresh("Poses", "", "All", "All", True, False, 1),
-            outputs=outputs,
-            show_progress=False,
-        )
-        library.change(
-            fn=_change_library,
-            inputs=[library, search, safe_mode, use_depth],
-            outputs=outputs,
-            show_progress=False,
-        )
-        search.submit(fn=_reset_page, inputs=refresh_inputs, outputs=outputs, show_progress=False)
-        search_button.click(fn=_reset_page, inputs=refresh_inputs, outputs=outputs, show_progress=False)
-        primary.change(fn=_reset_page, inputs=refresh_inputs, outputs=outputs, show_progress=False)
-        secondary.change(fn=_reset_page, inputs=refresh_inputs, outputs=outputs, show_progress=False)
-        safe_mode.change(fn=_reset_page, inputs=refresh_inputs, outputs=outputs, show_progress=False)
-        use_depth.change(fn=_reset_page, inputs=refresh_inputs, outputs=outputs, show_progress=False)
+                send_img2img.click(
+                    fn=None,
+                    inputs=[prompt],
+                    js="(text) => appendCharacterBuilderPrompt(text, 'img2img')",
+                    show_progress=False,
+                )
+                send_prompt.click(
+                    fn=None,
+                    inputs=[prompt],
+                    js="(text) => appendCharacterBuilderPrompt(text, 'txt2img')",
+                    show_progress=False,
+                )
 
-        previous.click(fn=lambda value: _move_page(value, -1), inputs=[page], outputs=[page], show_progress=False).then(
-            fn=_refresh, inputs=refresh_inputs, outputs=outputs, show_progress=False
-        )
-        following.click(fn=lambda value: _move_page(value, 1), inputs=[page], outputs=[page], show_progress=False).then(
-            fn=_refresh, inputs=refresh_inputs, outputs=outputs, show_progress=False
-        )
+                if target is not None:
+                    send_controlnet.click(
+                        fn=_image_for_controlnet,
+                        inputs=[selected_path, library, use_depth],
+                        outputs=[target.image.background, target.enabled, target.module],
+                        show_progress=False,
+                    ).success(
+                        # Only append the prompt after the ControlNet step succeeded.
+                        fn=None,
+                        inputs=[prompt],
+                        js="(text) => appendCharacterBuilderPrompt(text, 'txt2img')",
+                    )
+                else:
+                    send_controlnet.interactive = False
 
-        gallery.select(
-            fn=_select_item,
-            inputs=[library, use_depth, item_ids],
-            outputs=[selected_image, selected_path, prompt, selection_details],
-            show_progress=False,
-        )
-        random_button.click(
-            fn=_random_item,
-            inputs=[library, search, primary, secondary, safe_mode, use_depth],
-            outputs=[selected_image, selected_path, prompt, selection_details],
-            show_progress=False,
-        )
-
-        infotext_utils.register_paste_params_button(
-            infotext_utils.ParamBinding(
-                paste_button=send_img2img,
-                tabname="img2img",
-                source_image_component=selected_image,
-            )
-        )
-
-        send_img2img.click(
-            fn=None,
-            inputs=[prompt],
-            js="(text) => appendCharacterBuilderPrompt(text, 'img2img')",
-            show_progress=False,
-        )
-        send_prompt.click(
-            fn=None,
-            inputs=[prompt],
-            js="(text) => appendCharacterBuilderPrompt(text, 'txt2img')",
-            show_progress=False,
-        )
-
-        try:
-            from lib_controlnet.controlnet_ui.controlnet_ui_group import ControlNetUiGroup
-
-            target = next((group for group in ControlNetUiGroup.all_ui_groups if not group.is_img2img), None)
-        except Exception:
-            target = None
-
-        if target is not None:
-            send_controlnet.click(
-                fn=_image_for_controlnet,
-                inputs=[selected_path, library, use_depth],
-                outputs=[target.image.background, target.enabled, target.module],
-                show_progress=False,
-            ).success(
-                # Only append the prompt after the ControlNet step succeeded.
-                fn=None,
-                inputs=[prompt],
-                js="(text) => appendCharacterBuilderPrompt(text, 'txt2img')",
-            )
-        else:
-            send_controlnet.interactive = False
+        interface.load(fn=builder_load, outputs=builder_outputs, show_progress=False)
 
     return [(interface, "Character Builder", "forge-character-builder")]
 
