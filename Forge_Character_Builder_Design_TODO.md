@@ -422,6 +422,8 @@ class CatalogItem:
 
 ### Phase 3 — AI Costume Anime Gallery 來源（非阻塞擴充，可能取消）
 
+> **狀態：Deferred（2026-11-03）。** 本 Phase 非阻塞，暫不實作，直接進行 Phase 4A；日後若重啟，需先完成下列授權與 metadata 查證。
+
 > 此 Phase **不是**最終完成判定的必要條件。若查證後官方 metadata 不可得、授權不允許，或只能靠批量抓取取得資料，**取消本 Phase** 並在 README 記錄原因。
 
 - [ ] 查證官方網站的實際 metadata、圖片可用性、ID／分類與現行授權條款；記錄來源與查核日期。
@@ -435,12 +437,14 @@ class CatalogItem:
 
 ### Phase 4 — UX / 相容性改善（選做，MVP 後）
 
-- [ ] Portraits 預設隱藏但可啟用；Anhao 寫實 Outfit 可啟閉。
-- [ ] 動態來源數量、來源健康狀態、清楚的資料安裝提示。
-- [ ] 收藏／最近選用的素材（先考慮簡單本地設定；不用建資料庫）。
-- [ ] 增加可選的 CharaDB Pose + lineart 模式與模型相容提醒。
-- [ ] Pose tags 小型可靠對照表（如 `站姿 → standing`、`侧面 → from side`）：先確認 Anhao 欄位語意再啟用，預設仍可關閉；不臆測。
-- [ ] 視測試結果考慮把 Legacy Pose Gallery 與 Builder 合一，不作為 MVP 先決條件。
+> Phase 4A「Source UX」在分支 `feat/phase4-source-ux`（stacked on Phase 2）完成前兩項；其餘項目**暫緩，待 PR #3 實機驗收後**再評估。
+
+- [x] Portraits 預設隱藏但可啟用；Anhao 寫實 Outfit 可啟閉。（Phase 4A：Forge Settings，需 Reload UI）
+- [x] 動態來源數量、來源健康狀態、清楚的資料安裝提示。（Phase 4A）
+- [ ] 收藏／最近選用的素材（先考慮簡單本地設定；不用建資料庫）。— 暫緩：需先定 localStorage 格式與改名遷移。
+- [ ] 增加可選的 CharaDB Pose + lineart 模式與模型相容提醒。— 暫緩：涉及 ControlNet，待 PR #3 實機驗收。
+- [ ] Pose tags 小型可靠對照表（如 `站姿 → standing`、`侧面 → from side`）：先確認 Anhao 欄位語意再啟用，預設仍可關閉；不臆測。— 暫緩：需重新查證語意。
+- [ ] 視測試結果考慮把 Legacy Pose Gallery 與 Builder 合一，不作為 MVP 先決條件。— 暫緩：Phase 2 UI 尚未實機穩定。
 
 ---
 

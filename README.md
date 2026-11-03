@@ -62,6 +62,17 @@ vendor/charadb/
 未安裝 CharaDB 時，Builder 的 Outfit 可改用 Anhao 服裝，既有的 Pose Gallery
 分頁照常可用。
 
+### 設定與資料來源狀態
+
+在 **Settings → Forge Character Builder** 可調整（變更後需按 Reload UI）：
+
+- **Show the Portraits library in the Pose Gallery tab**：預設關閉。
+- **Offer Anhao (Original) outfits as a Character Builder outfit source**：預設開啟。
+
+Character Builder 分頁上方的 **Data sources** 會顯示各來源的數量與狀態
+（✅ 正常、⚠️ 部分可用、⛔ 未安裝、❌ 檔案無法讀取），有問題時自動展開，
+並列出應放置的路徑或環境變數。
+
 ### 使用方式
 
 Character Builder 分頁有三個步驟：
