@@ -459,7 +459,7 @@ def _gallery_ui():
                     outputs=legacy_selection_outputs,
                     show_progress=False,
                 )
-                pose_view.change(
+                pose_view.input(
                     fn=_switch_legacy_angle,
                     inputs=[selected_ref, pose_view, use_depth, safe_mode],
                     outputs=[selected_image, selected_ref, prompt, selection_details],
