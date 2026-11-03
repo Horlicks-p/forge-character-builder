@@ -1,17 +1,17 @@
-#tab_ai-pose-gallery {
-  --apg-ink: #17233d;
-  --apg-paper: #f5f7fb;
-  --apg-coral: #f0645a;
-  --apg-depth: #168c87;
-  --apg-line: color-mix(in srgb, var(--apg-ink) 16%, transparent);
+#tab_forge-character-builder {
+  --fcb-ink: #17233d;
+  --fcb-paper: #f5f7fb;
+  --fcb-coral: #f0645a;
+  --fcb-depth: #168c87;
+  --fcb-line: color-mix(in srgb, var(--fcb-ink) 16%, transparent);
   padding: 0.8rem;
 }
 
-#tab_ai-pose-gallery .apg-hero {
+#tab_forge-character-builder .fcb-hero {
   align-items: end;
   background:
-    linear-gradient(110deg, color-mix(in srgb, var(--apg-ink) 94%, #284a79), var(--apg-ink)),
-    var(--apg-ink);
+    linear-gradient(110deg, color-mix(in srgb, var(--fcb-ink) 94%, #284a79), var(--fcb-ink)),
+    var(--fcb-ink);
   border-radius: 14px 14px 5px 5px;
   color: #fff;
   display: flex;
@@ -23,7 +23,7 @@
   position: relative;
 }
 
-#tab_ai-pose-gallery .apg-hero::after {
+#tab_forge-character-builder .fcb-hero::after {
   background: repeating-linear-gradient(90deg, transparent 0 17px, rgba(255, 255, 255, 0.07) 18px 19px);
   content: "";
   inset: 0 0 0 52%;
@@ -32,7 +32,7 @@
   transform: skewX(-13deg);
 }
 
-#tab_ai-pose-gallery .apg-hero h1 {
+#tab_forge-character-builder .fcb-hero h1 {
   color: #fff !important;
   font-size: clamp(1.65rem, 3vw, 2.55rem);
   letter-spacing: -0.04em;
@@ -40,13 +40,13 @@
   margin: 0 0 0.55rem;
 }
 
-#tab_ai-pose-gallery .apg-hero p {
+#tab_forge-character-builder .fcb-hero p {
   color: rgba(255, 255, 255, 0.78);
   font-size: 0.98rem;
   margin: 0;
 }
 
-#tab_ai-pose-gallery .apg-count {
+#tab_forge-character-builder .fcb-count {
   color: #fff;
   font-size: clamp(2rem, 4vw, 3.3rem);
   font-variant-numeric: tabular-nums;
@@ -58,7 +58,7 @@
   z-index: 1;
 }
 
-#tab_ai-pose-gallery .apg-count span {
+#tab_forge-character-builder .fcb-count span {
   color: rgba(255, 255, 255, 0.72);
   display: block;
   font-size: 0.72rem;
@@ -67,51 +67,51 @@
   margin-top: 0.7rem;
 }
 
-#tab_ai-pose-gallery .apg-toolbar,
-#tab_ai-pose-gallery .apg-filters {
+#tab_forge-character-builder .fcb-toolbar,
+#tab_forge-character-builder .fcb-filters {
   align-items: end;
-  background: var(--apg-paper);
-  border: 1px solid var(--apg-line);
+  background: var(--fcb-paper);
+  border: 1px solid var(--fcb-line);
   gap: 0.65rem;
   padding: 0.65rem;
 }
 
-#tab_ai-pose-gallery .apg-toolbar {
+#tab_forge-character-builder .fcb-toolbar {
   border-radius: 5px 5px 0 0;
 }
 
-#tab_ai-pose-gallery .apg-filters {
+#tab_forge-character-builder .fcb-filters {
   border-radius: 0 0 5px 5px;
   border-top: 0;
   margin-bottom: 0.7rem;
 }
 
-#tab_ai-pose-gallery .apg-workbench {
+#tab_forge-character-builder .fcb-workbench {
   align-items: stretch;
   gap: 0.7rem;
 }
 
-#tab_ai-pose-gallery .apg-browser,
-#tab_ai-pose-gallery .apg-inspector {
-  border: 1px solid var(--apg-line);
+#tab_forge-character-builder .fcb-browser,
+#tab_forge-character-builder .fcb-inspector {
+  border: 1px solid var(--fcb-line);
   border-radius: 7px;
   min-width: 0;
   padding: 0.65rem;
 }
 
-#tab_ai-pose-gallery .apg-browser {
-  background: color-mix(in srgb, var(--apg-paper) 75%, transparent);
+#tab_forge-character-builder .fcb-browser {
+  background: color-mix(in srgb, var(--fcb-paper) 75%, transparent);
 }
 
-#tab_ai-pose-gallery .apg-inspector {
-  background: var(--apg-paper);
+#tab_forge-character-builder .fcb-inspector {
+  background: var(--fcb-paper);
 }
 
-#tab_ai-pose-gallery .apg-gallery .grid-wrap {
+#tab_forge-character-builder .fcb-gallery .grid-wrap {
   gap: 7px !important;
 }
 
-#tab_ai-pose-gallery .apg-gallery button.thumbnail-item {
+#tab_forge-character-builder .fcb-gallery button.thumbnail-item {
   background: #fff;
   border: 2px solid transparent !important;
   border-radius: 4px !important;
@@ -119,90 +119,90 @@
   overflow: hidden;
 }
 
-#tab_ai-pose-gallery .apg-gallery button.thumbnail-item.selected {
-  border-color: var(--apg-coral) !important;
-  box-shadow: 0 0 0 2px color-mix(in srgb, var(--apg-coral) 24%, transparent) !important;
+#tab_forge-character-builder .fcb-gallery button.thumbnail-item.selected {
+  border-color: var(--fcb-coral) !important;
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--fcb-coral) 24%, transparent) !important;
 }
 
-#tab_ai-pose-gallery .apg-gallery .caption-label {
+#tab_forge-character-builder .fcb-gallery .caption-label {
   font-size: 0.72rem;
   line-height: 1.25;
   white-space: pre-line;
 }
 
-#tab_ai-pose-gallery .apg-selected-image {
+#tab_forge-character-builder .fcb-selected-image {
   background: #e7ebf3;
   border-radius: 4px;
 }
 
-#tab_ai-pose-gallery .apg-pagination {
+#tab_forge-character-builder .fcb-pagination {
   align-items: center;
   justify-content: center;
 }
 
-#tab_ai-pose-gallery .apg-page-info {
+#tab_forge-character-builder .fcb-page-info {
   min-width: 12rem;
   text-align: center;
 }
 
-#tab_ai-pose-gallery .apg-page-info p,
-#tab_ai-pose-gallery .apg-help p,
-#tab_ai-pose-gallery .apg-source-status p {
+#tab_forge-character-builder .fcb-page-info p,
+#tab_forge-character-builder .fcb-help p,
+#tab_forge-character-builder .fcb-source-status p {
   margin: 0;
 }
 
-#tab_ai-pose-gallery .apg-help {
-  border-left: 3px solid var(--apg-depth);
-  color: color-mix(in srgb, var(--apg-ink) 78%, transparent);
+#tab_forge-character-builder .fcb-help {
+  border-left: 3px solid var(--fcb-depth);
+  color: color-mix(in srgb, var(--fcb-ink) 78%, transparent);
   font-size: 0.82rem;
   line-height: 1.55;
   padding: 0.35rem 0.65rem;
 }
 
-#tab_ai-pose-gallery .apg-source-status {
+#tab_forge-character-builder .fcb-source-status {
   color: var(--body-text-color-subdued);
   font-size: 0.75rem;
   margin-top: 0.65rem;
   overflow-wrap: anywhere;
 }
 
-#tab_ai-pose-gallery button.primary {
-  background: var(--apg-coral);
-  border-color: color-mix(in srgb, var(--apg-coral) 80%, #000);
+#tab_forge-character-builder button.primary {
+  background: var(--fcb-coral);
+  border-color: color-mix(in srgb, var(--fcb-coral) 80%, #000);
 }
 
-#tab_ai-pose-gallery :focus-visible {
-  outline: 3px solid color-mix(in srgb, var(--apg-depth) 55%, transparent);
+#tab_forge-character-builder :focus-visible {
+  outline: 3px solid color-mix(in srgb, var(--fcb-depth) 55%, transparent);
   outline-offset: 2px;
 }
 
 @media (max-width: 900px) {
-  #tab_ai-pose-gallery .apg-hero {
+  #tab_forge-character-builder .fcb-hero {
     align-items: start;
     flex-direction: column;
     gap: 1.2rem;
   }
 
-  #tab_ai-pose-gallery .apg-count {
+  #tab_forge-character-builder .fcb-count {
     text-align: left;
   }
 
-  #tab_ai-pose-gallery .apg-workbench,
-  #tab_ai-pose-gallery .apg-toolbar,
-  #tab_ai-pose-gallery .apg-filters {
+  #tab_forge-character-builder .fcb-workbench,
+  #tab_forge-character-builder .fcb-toolbar,
+  #tab_forge-character-builder .fcb-filters {
     flex-direction: column;
   }
 
-  #tab_ai-pose-gallery .apg-browser,
-  #tab_ai-pose-gallery .apg-inspector {
+  #tab_forge-character-builder .fcb-browser,
+  #tab_forge-character-builder .fcb-inspector {
     width: 100%;
   }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  #tab_ai-pose-gallery *,
-  #tab_ai-pose-gallery *::before,
-  #tab_ai-pose-gallery *::after {
+  #tab_forge-character-builder *,
+  #tab_forge-character-builder *::before,
+  #tab_forge-character-builder *::after {
     scroll-behavior: auto !important;
     transition: none !important;
   }

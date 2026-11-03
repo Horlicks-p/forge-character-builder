@@ -1,0 +1,22 @@
+[
+{"id": "H001", "set": "hair", "cat": "髪型", "sub": "style", "jp": "ロングヘア", "tags": "long hair", "color": "brown hair", "color_jp": "茶"},
+{"id": "H001-black", "set": "hair", "cat": "髪型", "sub": "style_color", "jp": "ロングヘア(黒)", "tags": "long hair", "parent": "H001", "color": "black hair", "color_jp": "黒"},
+{"id": "H001-blonde", "set": "hair", "cat": "髪型", "sub": "style_color", "jp": "ロングヘア(金)", "tags": "long hair", "parent": "H001", "color": "blonde hair", "color_jp": "金"},
+{"id": "H010", "set": "hair", "cat": "髪型", "sub": "style", "jp": "ツインテール", "tags": "twintails, long hair", "color": "brown hair", "color_jp": "茶"},
+{"id": "H037", "set": "hair", "cat": "前髪", "sub": "bangs", "jp": "ぱっつん前髪", "tags": "blunt bangs"},
+{"id": "H049", "set": "hair", "cat": "髪色", "sub": "color", "jp": "黒髪", "tags": "black hair"},
+{"id": "H052", "set": "hair", "cat": "髪色", "sub": "color", "jp": "金髪", "tags": "blonde hair"},
+{"id": "H066", "set": "hair", "cat": "髪色", "sub": "color", "jp": "インナーカラー", "tags": "two-tone hair, black hair, pink hair, colored inner hair"},
+{"id": "H069", "set": "hair", "cat": "髪飾り", "sub": "acc", "jp": "リボン", "tags": "hair ribbon, red ribbon"},
+{"id": "H095", "set": "hair", "cat": "目の色", "sub": "eye", "jp": "茶色の目", "tags": "brown eyes"},
+{"id": "H097", "set": "hair", "cat": "目の色", "sub": "eye", "jp": "青い目", "tags": "blue eyes"},
+{"id": "H120", "set": "hair", "cat": "瞳の形", "sub": "eye", "jp": "たれ目", "tags": "tareme, brown eyes"},
+{"id": "O001", "set": "outfit", "cat": "制服・学生", "jp": "セーラー服(紺)", "tags": "serafuku, sailor collar, blue sailor collar, red neckerchief, pleated skirt, blue skirt"},
+{"id": "O130", "set": "outfit", "cat": "きれいめ・オフィス", "jp": "スーツ", "tags": "business suit, black suit, white shirt, black skirt, black hair"},
+{"id": "O231", "set": "outfit", "cat": "水着", "jp": "マイクロビキニ", "tags": "micro bikini, bikini, swimsuit"},
+{"id": "O999", "set": "outfit", "cat": "未知の分類", "jp": "テスト", "tags": "skirt, pleated skirt, Skirt"},
+{"id": "P001", "set": "pose", "cat": "立ち", "jp": "気をつけ", "tags": "standing, arms at sides"},
+{"id": "", "set": "hair", "sub": "style", "tags": "broken entry without id"},
+{"id": "X001", "set": "unknown", "tags": "ignored"},
+{"id": "H900-orphan", "set": "hair", "sub": "style_color", "tags": "long hair"}
+]

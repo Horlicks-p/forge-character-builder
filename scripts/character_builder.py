@@ -3,7 +3,6 @@ from __future__ import annotations
 import json
 import os
 import random
-import re
 from functools import lru_cache
 from pathlib import Path
 
@@ -12,6 +11,10 @@ import numpy as np
 from PIL import Image, ImageOps
 
 from modules import infotext_utils, script_callbacks
+
+# Forge Neo adds the extension root to sys.path, so the shared core package
+# (kept outside scripts/ so Forge does not load it as a script) imports directly.
+from character_builder_core.prompts import format_outfit_keywords
 
 
 EXTENSION_ROOT = Path(__file__).resolve().parent.parent
@@ -113,7 +116,8 @@ def _english_value(value: object) -> str:
 
 def _find_gallery_root() -> Path | None:
     candidates: list[Path] = []
-    configured = os.environ.get("AI_POSE_GALLERY_ROOT", "").strip()
+    # ANHAO_GALLERY_ROOT is preferred; AI_POSE_GALLERY_ROOT is kept for compatibility.
+    configured = (os.environ.get("ANHAO_GALLERY_ROOT") or os.environ.get("AI_POSE_GALLERY_ROOT") or "").strip()
     if configured:
         candidates.append(Path(configured))
 
@@ -232,66 +236,6 @@ def _item_title(label: str, item: dict) -> str:
     return f"{hair_length or 'Portrait'} reference"
 
 
-# Conservative tag boundaries for unpunctuated outfit keywords from ai-pose-gallery-zh.
-# Keep modifiers (e.g. "pleated mini") with the following garment instead of
-# replacing every space with a comma.
-OUTFIT_GARMENT_NOUNS = {
-    "blouse", "bra", "bracelet", "camisole", "cap", "cardigan", "choker",
-    "coat", "corset", "dress", "earrings", "gloves", "hat", "headband",
-    "heels", "hoodie", "jacket", "jeans", "jumpsuit", "kimono", "leggings",
-    "loafers", "necklace", "overalls", "pajamas", "panties", "pants",
-    "pumps", "sandals", "scarf", "shirt", "shoes", "shorts", "skirt",
-    "sneakers", "socks", "stockings", "sweater", "swimsuit", "tights",
-    "top", "vest", "bag", "backpack", "belt", "boots", "bikini",
-    "tie", "uniform", "hairpin",
-}
-OUTFIT_COLOR_WORDS = {
-    "black", "blue", "brown", "cream", "gold", "gray", "green", "grey",
-    "ivory", "navy", "orange", "pink", "purple", "red", "silver",
-    "white", "yellow", "beige",
-}
-
-
-def _format_outfit_keywords(value: object) -> str:
-    """Insert tag separators without breaking multi-word clothing names."""
-    raw = " ".join(str(value or "").split())
-    if not raw:
-        return ""
-
-    # Respect existing tag boundaries. Do not reinterpret prompts already
-    # supplied in comma-separated (or Chinese-punctuated) form.
-    explicit = [part.strip() for part in re.split(r"[,，、;；]+", raw) if part.strip()]
-    if len(explicit) > 1:
-        return ", ".join(explicit)
-
-    words = raw.split()
-    tags: list[str] = []
-    current: list[str] = []
-    for index, token in enumerate(words):
-        current.append(token)
-        word = token.casefold()
-        next_word = words[index + 1].casefold() if index + 1 < len(words) else ""
-
-        # "knit sweater" and "dress shirt" are single garment names.
-        if word == "knit":
-            boundary = next_word not in {"sweater", "cardigan", "dress", "top", "vest"}
-        elif word == "dress" and next_word == "shirt":
-            boundary = False
-        elif word in {"ribbon", "bow"}:
-            # Can be either a separate accessory or a garment modifier.
-            boundary = not next_word or next_word in OUTFIT_COLOR_WORDS
-        else:
-            boundary = word in OUTFIT_GARMENT_NOUNS
-
-        if boundary:
-            tags.append(" ".join(current))
-            current = []
-
-    if current:
-        tags.append(" ".join(current))
-    return ", ".join(tags)
-
-
 def _prompt_for(label: str, item: dict) -> str:
     if label == "Poses":
         angle = _english_value(item.get("角度", ""))
@@ -300,7 +244,7 @@ def _prompt_for(label: str, item: dict) -> str:
         return ", ".join(part for part in [f"{angle} view" if angle else "", category, system, "character pose reference"] if part)
 
     if label == "Outfits":
-        english = _format_outfit_keywords(item.get("关键词", ""))
+        english = format_outfit_keywords(item.get("关键词", ""))
         return ", ".join(part for part in [english, "detailed outfit"] if part)
 
     section = _english_value(item.get("分区", ""))
@@ -438,6 +382,8 @@ def _random_item(label, query, primary, secondary, safe_mode, use_depth):
 def _image_for_controlnet(path: str, label: str, use_depth: bool):
     if not path:
         raise gr.Error("Select an item first")
+    if not Path(path).is_file():
+        raise gr.Error(f"Missing reference image: {Path(path).name}")
     image = ImageOps.exif_transpose(Image.open(path)).convert("RGB")
     array = np.asarray(image)
     if label == "Poses" and use_depth:
@@ -454,26 +400,26 @@ def _gallery_ui():
         else "Gallery data is not installed. Follow the README to add the ai-pose-gallery-zh dataset."
     )
 
-    with gr.Blocks(elem_id="ai_pose_gallery") as interface:
+    with gr.Blocks(elem_id="forge_character_builder") as interface:
         gr.HTML(
             """
-            <header class="apg-hero">
+            <header class="fcb-hero">
               <div>
-                <h1>AI Pose Gallery</h1>
+                <h1>Forge Character Builder</h1>
                 <p>Browse pose, outfit, and portrait references for your Forge workflow.</p>
               </div>
-              <div class="apg-count">4,345 <span>REFERENCE IMAGES</span></div>
+              <div class="fcb-count">4,345 <span>REFERENCE IMAGES</span></div>
             </header>
             """
         )
 
-        with gr.Row(elem_classes=["apg-toolbar"]):
-            library = gr.Radio(list(LIBRARIES), value="Poses", label="Library", elem_classes=["apg-library"])
+        with gr.Row(elem_classes=["fcb-toolbar"]):
+            library = gr.Radio(list(LIBRARIES), value="Poses", label="Library", elem_classes=["fcb-library"])
             search = gr.Textbox(label="Search", placeholder="Category, type, or ID", scale=3)
             search_button = gr.Button("Search", variant="secondary", scale=0, min_width=90)
             random_button = gr.Button("Random pick", variant="secondary", scale=0, min_width=110)
 
-        with gr.Row(elem_classes=["apg-filters"]):
+        with gr.Row(elem_classes=["fcb-filters"]):
             primary = gr.Dropdown(["All"], value="All", label="System")
             secondary = gr.Dropdown(["All"], value="All", label="Category")
             safe_mode = gr.Checkbox(value=True, label="Safe mode (hide 18+)")
@@ -483,8 +429,8 @@ def _gallery_ui():
         item_ids = gr.State([])
         selected_path = gr.State("")
 
-        with gr.Row(elem_classes=["apg-workbench"]):
-            with gr.Column(scale=4, elem_classes=["apg-browser"]):
+        with gr.Row(elem_classes=["fcb-workbench"]):
+            with gr.Column(scale=4, elem_classes=["fcb-browser"]):
                 gallery = gr.Gallery(
                     label="References",
                     columns=6,
@@ -494,21 +440,21 @@ def _gallery_ui():
                     allow_preview=False,
                     show_download_button=False,
                     show_share_button=False,
-                    elem_classes=["apg-gallery"],
+                    elem_classes=["fcb-gallery"],
                 )
-                with gr.Row(elem_classes=["apg-pagination"]):
+                with gr.Row(elem_classes=["fcb-pagination"]):
                     previous = gr.Button("Previous", min_width=90)
-                    page_info = gr.Markdown("Loading…", elem_classes=["apg-page-info"])
+                    page_info = gr.Markdown("Loading…", elem_classes=["fcb-page-info"])
                     following = gr.Button("Next", min_width=90)
 
-            with gr.Column(scale=2, min_width=320, elem_classes=["apg-inspector"]):
+            with gr.Column(scale=2, min_width=320, elem_classes=["fcb-inspector"]):
                 selected_image = gr.Image(
                     label="Selected reference",
                     type="pil",
                     height=360,
                     interactive=False,
                     show_download_button=True,
-                    elem_classes=["apg-selected-image"],
+                    elem_classes=["fcb-selected-image"],
                 )
                 selection_details = gr.Textbox(label="Reference details", lines=3, interactive=False)
                 prompt = gr.Textbox(
@@ -522,10 +468,10 @@ def _gallery_ui():
                 send_prompt = gr.Button("Append prompt to txt2img", variant="secondary")
                 gr.Markdown(
                     "Depth images use the `None` preprocessor. Regular pose images preselect `canny`. Choose the ControlNet model separately.",
-                    elem_classes=["apg-help"],
+                    elem_classes=["fcb-help"],
                 )
 
-        gr.Markdown(source_status, elem_classes=["apg-source-status"])
+        gr.Markdown(source_status, elem_classes=["fcb-source-status"])
 
         outputs = [gallery, item_ids, page, page_info, primary, secondary, use_depth]
         refresh_inputs = [library, search, primary, secondary, safe_mode, use_depth, page]
@@ -579,13 +525,13 @@ def _gallery_ui():
         send_img2img.click(
             fn=None,
             inputs=[prompt],
-            js="(text) => appendPoseGalleryPrompt(text, 'img2img')",
+            js="(text) => appendCharacterBuilderPrompt(text, 'img2img')",
             show_progress=False,
         )
         send_prompt.click(
             fn=None,
             inputs=[prompt],
-            js="(text) => appendPoseGalleryPrompt(text, 'txt2img')",
+            js="(text) => appendCharacterBuilderPrompt(text, 'txt2img')",
             show_progress=False,
         )
 
@@ -602,15 +548,16 @@ def _gallery_ui():
                 inputs=[selected_path, library, use_depth],
                 outputs=[target.image.background, target.enabled, target.module],
                 show_progress=False,
-            ).then(
+            ).success(
+                # Only append the prompt after the ControlNet step succeeded.
                 fn=None,
                 inputs=[prompt],
-                js="(text) => appendPoseGalleryPrompt(text, 'txt2img')",
+                js="(text) => appendCharacterBuilderPrompt(text, 'txt2img')",
             )
         else:
             send_controlnet.interactive = False
 
-    return [(interface, "AI Pose Gallery", "ai-pose-gallery")]
+    return [(interface, "Character Builder", "forge-character-builder")]
 
 
 script_callbacks.on_ui_tabs(_gallery_ui)
