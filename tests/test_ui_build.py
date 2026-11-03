@@ -42,5 +42,17 @@ class UIBuildTests(unittest.TestCase):
         self.assertIn("ControlNet unavailable", texts)
 
 
+@unittest.skipUnless(HAS_GRADIO, "gradio 4.40 not installed")
+class PickParsingTests(unittest.TestCase):
+    def test_parse_pick(self):
+        sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+        from character_builder_ui.builder_tab import _parse_pick
+
+        self.assertEqual(_parse_pick("3:1699999999999"), 3)
+        self.assertEqual(_parse_pick("0:1"), 0)
+        for bad in ("", None, "abc", ":5"):
+            self.assertIsNone(_parse_pick(bad), bad)
+
+
 if __name__ == "__main__":
     unittest.main()
