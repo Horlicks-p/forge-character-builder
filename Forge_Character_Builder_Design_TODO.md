@@ -1,7 +1,7 @@
-# AI Pose Gallery for Forge — Character Builder 功能設計書 / TODO
+# Forge Character Builder 功能設計書 / TODO
 
-> **文件版本：** v1.1（2026-11-03；依 Forge Neo 原始碼審查修訂，見文末「修訂紀錄」）  
-> **目標專案：** https://github.com/Horlicks-p/ai-pose-gallery-forge  
+> **文件版本：** v1.2（2026-11-03；見文末「修訂紀錄」）  
+> **目標專案：** https://github.com/Horlicks-p/forge-character-builder  
 > **目標執行環境：** [Haoming02/sd-webui-forge-classic](https://github.com/Haoming02/sd-webui-forge-classic) `neo` 分支、Gradio 4.40.0、Neo 內建 ControlNet（`sd_forge_controlnet`）。  
 > **用途：** 交由 Claude Code / Codex 實作的技術規格與驗收清單  
 > **文件語言：** 繁體中文（程式碼、UI 名稱及 Prompt 標籤可使用英文）  
@@ -112,7 +112,7 @@
 ## 3. 使用者流程（MVP）
 
 ```text
-啟動 Forge → 打開「AI Pose Gallery / Character Builder」
+啟動 Forge → 打開「Character Builder」分頁
         │
         ├─ Step 1：Character（CharaDB）
         │    ├─ Hair style + Hair color
@@ -143,7 +143,7 @@
 
 ### 4.1 主介面架構
 
-**建議保留現有頂部 `AI Pose Gallery` 分頁**，在其中以 `gr.Tabs` 或等價的穩定 Gradio 元件分成：
+**沿用現有的頂部分頁（已更名為 `Character Builder`）**，在其中以 `gr.Tabs` 或等價的穩定 Gradio 元件分成：
 
 - **Character Builder（預設）**：三步選擇器 + 最終 Prompt 預覽 + Send All。
 - **Pose Gallery（Legacy）**：繼續保留既有直接選圖、送到 ControlNet、送 `img2img` 流程。整合完成且確認無回歸後，才考慮合併為單一 UI。
@@ -302,15 +302,15 @@ Pose 只送 ControlNet，不產生 tags。若只選 `H001` 而未選髮色，輸
 
 ## 7. 建議程式架構（不強制一模一樣）
 
-> 核心原則：**資料 adapter / Prompt Builder / Forge 傳送層 分離**。目前 `scripts/ai_pose_gallery.py` 約為單檔 Gradio 實作，可用薄層拆分；勿導入 React、Vite 或外部狀態管理框架。
+> 核心原則：**資料 adapter / Prompt Builder / Forge 傳送層 分離**。目前 `scripts/character_builder.py` 約為單檔 Gradio 實作，可用薄層拆分；勿導入 React、Vite 或外部狀態管理框架。
 
-**共用模組的位置（重要）：** Forge 只載入 `scripts/` 第一層的 `.py`，並以 `spec_from_file_location` 逐檔載入，所以**不要**把套件放在 `scripts/` 底下。共用模組放在**擴充根目錄**，使用唯一的套件名 `ai_pose_gallery_core/`，避免與其他擴充撞名。Neo 的 `modules/scripts.py` 會把每個擴充的根目錄加入 `sys.path`，入口檔可直接 `from ai_pose_gallery_core import ...`，**不需手動修改 `sys.path`**。`ai_pose_gallery_core/` 內不得 import `gradio` 或 `modules`，以便在無 Forge 環境下用純 Python 測試。
+**共用模組的位置（重要）：** Forge 只載入 `scripts/` 第一層的 `.py`，並以 `spec_from_file_location` 逐檔載入，所以**不要**把套件放在 `scripts/` 底下。共用模組放在**擴充根目錄**，使用唯一的套件名 `character_builder_core/`，避免與其他擴充撞名。Neo 的 `modules/scripts.py` 會把每個擴充的根目錄加入 `sys.path`，入口檔可直接 `from character_builder_core import ...`，**不需手動修改 `sys.path`**。`character_builder_core/` 內不得 import `gradio` 或 `modules`，以便在無 Forge 環境下用純 Python 測試。
 
 ```text
-ai-pose-gallery-forge/
+forge-character-builder/
 ├── scripts/
-│   └── ai_pose_gallery.py          # 既有 Forge tab 入口 / UI，避免巨幅重寫
-├── ai_pose_gallery_core/           # 新增純 Python 共用邏輯（擴充根目錄、唯一名稱）
+│   └── character_builder.py        # 既有 Forge tab 入口 / UI，避免巨幅重寫
+├── character_builder_core/        # 新增純 Python 共用邏輯（擴充根目錄、唯一名稱）
 │   ├── __init__.py
 │   ├── models.py                   # CatalogItem、BuilderSelection 等資料結構
 │   ├── catalog.py                  # Provider 匯入 / 索引 / 篩選
@@ -320,7 +320,7 @@ ai-pose-gallery-forge/
 │   ├── prompts.py                  # Danbooru tags / merge / 去重；含 P0 的 outfit 格式化
 │   └── assets.py                   # 本機路徑、來源 URL、安全檢查
 ├── javascript/
-│   └── ai_pose_gallery.js          # txt2img append 與 tab 切換（沿用／少量補強）
+│   └── character_builder.js        # txt2img append 與 tab 切換（沿用／少量補強）
 ├── style.css                      # 既有 UI 樣式
 ├── tests/
 │   ├── test_charadb_adapter.py
@@ -345,7 +345,7 @@ ai-pose-gallery-forge/
 可支援（非必須）路徑設定：
 
 ```text
-AI_POSE_GALLERY_ROOT=<既有 Anhao 根目錄>   # 保持向下相容
+ANHAO_GALLERY_ROOT=<既有 Anhao 根目錄>     # 舊名 AI_POSE_GALLERY_ROOT 仍可用（向下相容）
 CHARADB_ROOT=<使用者自行解包的 CharaDB 根目錄>  # 新增，可選
 ANIME_COSTUME_METADATA=<經確認的本地 metadata JSON>  # 新增，可選
 ```
@@ -395,7 +395,7 @@ class CatalogItem:
 ### Phase 1 — CharaDB Metadata Adapter + Prompt Core（第一個功能 PR）
 
 - [x] 讀取使用者自行放置的 `items_public.json`；無檔案時顯示提示，不影響 Anhao。
-- [x] 建立根目錄套件 `ai_pose_gallery_core/`；將 P0 的 `_format_outfit_keywords()` 移入 `prompts.py`，入口檔改為 import。
+- [x] 建立根目錄套件 `character_builder_core/`；將 P0 的 `_format_outfit_keywords()` 移入 `prompts.py`，入口檔改為 import。
 - [x] 依 `set`、`sub`、`cat` 正規化髮型、顏色、前髮、髮飾、眼色／瞳型、服裝；JSON array／JSON Lines 皆能讀取。
 - [x] `style_color` 與 `style`／獨立顏色欄位合併，不重複羅列髮型；髮型的預設 `color` 不輸出。
 - [x] CharaDB 服裝分類對應 Safe Mode NSFW 規則。
@@ -515,8 +515,8 @@ class CatalogItem:
 
 ### 確認過的來源
 
-- 專案本體：https://github.com/Horlicks-p/ai-pose-gallery-forge
-- P0 PR #1：https://github.com/Horlicks-p/ai-pose-gallery-forge/pull/1
+- 專案本體：https://github.com/Horlicks-p/forge-character-builder
+- P0 PR #1：https://github.com/Horlicks-p/forge-character-builder/pull/1
 - CharaDB 原始專案與 JSON：https://github.com/taki-ttt/charadb ／ https://github.com/taki-ttt/charadb/blob/main/data/items_public.json
 - CharaDB LICENSE：https://github.com/taki-ttt/charadb/blob/main/LICENSE
 - CharaDB 官方 Release（選用圖片包）：https://github.com/taki-ttt/charadb/releases/tag/v1.0
@@ -551,7 +551,7 @@ class CatalogItem:
 
 ## 12. 可直接貼給 Claude Code / Codex 的開工 Prompt
 
-> 請先閱讀本檔全部內容，再讀取 `Horlicks-p/ai-pose-gallery-forge` 的最新 `main` 與開啟中的 PR，尤其確認 P0 PR #1 是否已合併。目標環境只有 Forge Neo（`Haoming02/sd-webui-forge-classic` 的 `neo` 分支、Gradio 4.40.0）。不要重寫外掛、不要下載或提交第三方圖片、不要直接改 main。請依 **Phase 0 → Phase 1 → Phase 2 →（非阻塞）Phase 3 → Phase 4** 的順序拆成小 PR。第一個目標是在根目錄 `ai_pose_gallery_core/` 完成 CharaDB 資料 adapter、Danbooru Prompt Builder 與測試；第二個目標是在既有 Forge UI 完成「髮型／眼睛 + 服裝 + Anhao Pose → Send All（`.success()`）→ txt2img Prompt + ControlNet Unit 1」的 MVP；Anime Costume 只是可取消的擴充。髮型預設色不輸出，MVP 不輸出 Pose tags。請保留 `img2img`、Depth／Canny、原有 vendor 路徑、Safe Mode 與所有 LoRA／Prompt 內容；遇到任何素材授權或 URL／版本不確定的地方，採可降級設計、記錄限制，**不要猜測欄位後直接大量抓圖**。每個 PR 請附變更清單、測試結果、回歸檢查與人工驗收步驟。
+> 請先閱讀本檔全部內容，再讀取 `Horlicks-p/forge-character-builder` 的最新 `main` 與開啟中的 PR，尤其確認 P0 PR #1 是否已合併。目標環境只有 Forge Neo（`Haoming02/sd-webui-forge-classic` 的 `neo` 分支、Gradio 4.40.0）。不要重寫外掛、不要下載或提交第三方圖片、不要直接改 main。請依 **Phase 0 → Phase 1 → Phase 2 →（非阻塞）Phase 3 → Phase 4** 的順序拆成小 PR。第一個目標是在根目錄 `character_builder_core/` 完成 CharaDB 資料 adapter、Danbooru Prompt Builder 與測試；第二個目標是在既有 Forge UI 完成「髮型／眼睛 + 服裝 + Anhao Pose → Send All（`.success()`）→ txt2img Prompt + ControlNet Unit 1」的 MVP；Anime Costume 只是可取消的擴充。髮型預設色不輸出，MVP 不輸出 Pose tags。請保留 `img2img`、Depth／Canny、原有 vendor 路徑、Safe Mode 與所有 LoRA／Prompt 內容；遇到任何素材授權或 URL／版本不確定的地方，採可降級設計、記錄限制，**不要猜測欄位後直接大量抓圖**。每個 PR 請附變更清單、測試結果、回歸檢查與人工驗收步驟。
 
 ---
 
@@ -563,6 +563,11 @@ class CatalogItem:
 
 ## 修訂紀錄
 
+- **v1.2（2026-11-03）** 專案更名為 **Forge Character Builder**（repo `forge-character-builder`）：
+  - 套件 `ai_pose_gallery_core` → `character_builder_core`；入口 `scripts/character_builder.py`；JS `javascript/character_builder.js`（`appendCharacterBuilderPrompt`）。
+  - 分頁標題 `Character Builder`、tab id `forge-character-builder`、CSS 前綴 `fcb-`。
+  - 環境變數 `ANHAO_GALLERY_ROOT`（舊名 `AI_POSE_GALLERY_ROOT` 保留為相容備援）。
+  - 理由：功能已不只是 Pose 圖庫；並避免與資料來源 AIポーズギャラリー／ai-pose-gallery-zh 的名稱混淆。
 - **v1.1（2026-11-03）** 依 Forge Neo 原始碼審查（快照 `7d6fd36`）及 Claude／Codex 交叉審查修訂：
   1. 目標環境限定為 Forge Neo，移除 Forge Classic 優先描述；實機驗收須記錄 Neo commit SHA。
   2. 共用模組改放擴充根目錄 `ai_pose_gallery_core/`（Neo 會將擴充根目錄加入 `sys.path`）。

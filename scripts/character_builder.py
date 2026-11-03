@@ -14,7 +14,7 @@ from modules import infotext_utils, script_callbacks
 
 # Forge Neo adds the extension root to sys.path, so the shared core package
 # (kept outside scripts/ so Forge does not load it as a script) imports directly.
-from ai_pose_gallery_core.prompts import format_outfit_keywords
+from character_builder_core.prompts import format_outfit_keywords
 
 
 EXTENSION_ROOT = Path(__file__).resolve().parent.parent
@@ -116,7 +116,8 @@ def _english_value(value: object) -> str:
 
 def _find_gallery_root() -> Path | None:
     candidates: list[Path] = []
-    configured = os.environ.get("AI_POSE_GALLERY_ROOT", "").strip()
+    # ANHAO_GALLERY_ROOT is preferred; AI_POSE_GALLERY_ROOT is kept for compatibility.
+    configured = (os.environ.get("ANHAO_GALLERY_ROOT") or os.environ.get("AI_POSE_GALLERY_ROOT") or "").strip()
     if configured:
         candidates.append(Path(configured))
 
@@ -399,26 +400,26 @@ def _gallery_ui():
         else "Gallery data is not installed. Follow the README to add the ai-pose-gallery-zh dataset."
     )
 
-    with gr.Blocks(elem_id="ai_pose_gallery") as interface:
+    with gr.Blocks(elem_id="forge_character_builder") as interface:
         gr.HTML(
             """
-            <header class="apg-hero">
+            <header class="fcb-hero">
               <div>
-                <h1>AI Pose Gallery</h1>
+                <h1>Forge Character Builder</h1>
                 <p>Browse pose, outfit, and portrait references for your Forge workflow.</p>
               </div>
-              <div class="apg-count">4,345 <span>REFERENCE IMAGES</span></div>
+              <div class="fcb-count">4,345 <span>REFERENCE IMAGES</span></div>
             </header>
             """
         )
 
-        with gr.Row(elem_classes=["apg-toolbar"]):
-            library = gr.Radio(list(LIBRARIES), value="Poses", label="Library", elem_classes=["apg-library"])
+        with gr.Row(elem_classes=["fcb-toolbar"]):
+            library = gr.Radio(list(LIBRARIES), value="Poses", label="Library", elem_classes=["fcb-library"])
             search = gr.Textbox(label="Search", placeholder="Category, type, or ID", scale=3)
             search_button = gr.Button("Search", variant="secondary", scale=0, min_width=90)
             random_button = gr.Button("Random pick", variant="secondary", scale=0, min_width=110)
 
-        with gr.Row(elem_classes=["apg-filters"]):
+        with gr.Row(elem_classes=["fcb-filters"]):
             primary = gr.Dropdown(["All"], value="All", label="System")
             secondary = gr.Dropdown(["All"], value="All", label="Category")
             safe_mode = gr.Checkbox(value=True, label="Safe mode (hide 18+)")
@@ -428,8 +429,8 @@ def _gallery_ui():
         item_ids = gr.State([])
         selected_path = gr.State("")
 
-        with gr.Row(elem_classes=["apg-workbench"]):
-            with gr.Column(scale=4, elem_classes=["apg-browser"]):
+        with gr.Row(elem_classes=["fcb-workbench"]):
+            with gr.Column(scale=4, elem_classes=["fcb-browser"]):
                 gallery = gr.Gallery(
                     label="References",
                     columns=6,
@@ -439,21 +440,21 @@ def _gallery_ui():
                     allow_preview=False,
                     show_download_button=False,
                     show_share_button=False,
-                    elem_classes=["apg-gallery"],
+                    elem_classes=["fcb-gallery"],
                 )
-                with gr.Row(elem_classes=["apg-pagination"]):
+                with gr.Row(elem_classes=["fcb-pagination"]):
                     previous = gr.Button("Previous", min_width=90)
-                    page_info = gr.Markdown("Loading…", elem_classes=["apg-page-info"])
+                    page_info = gr.Markdown("Loading…", elem_classes=["fcb-page-info"])
                     following = gr.Button("Next", min_width=90)
 
-            with gr.Column(scale=2, min_width=320, elem_classes=["apg-inspector"]):
+            with gr.Column(scale=2, min_width=320, elem_classes=["fcb-inspector"]):
                 selected_image = gr.Image(
                     label="Selected reference",
                     type="pil",
                     height=360,
                     interactive=False,
                     show_download_button=True,
-                    elem_classes=["apg-selected-image"],
+                    elem_classes=["fcb-selected-image"],
                 )
                 selection_details = gr.Textbox(label="Reference details", lines=3, interactive=False)
                 prompt = gr.Textbox(
@@ -467,10 +468,10 @@ def _gallery_ui():
                 send_prompt = gr.Button("Append prompt to txt2img", variant="secondary")
                 gr.Markdown(
                     "Depth images use the `None` preprocessor. Regular pose images preselect `canny`. Choose the ControlNet model separately.",
-                    elem_classes=["apg-help"],
+                    elem_classes=["fcb-help"],
                 )
 
-        gr.Markdown(source_status, elem_classes=["apg-source-status"])
+        gr.Markdown(source_status, elem_classes=["fcb-source-status"])
 
         outputs = [gallery, item_ids, page, page_info, primary, secondary, use_depth]
         refresh_inputs = [library, search, primary, secondary, safe_mode, use_depth, page]
@@ -524,13 +525,13 @@ def _gallery_ui():
         send_img2img.click(
             fn=None,
             inputs=[prompt],
-            js="(text) => appendPoseGalleryPrompt(text, 'img2img')",
+            js="(text) => appendCharacterBuilderPrompt(text, 'img2img')",
             show_progress=False,
         )
         send_prompt.click(
             fn=None,
             inputs=[prompt],
-            js="(text) => appendPoseGalleryPrompt(text, 'txt2img')",
+            js="(text) => appendCharacterBuilderPrompt(text, 'txt2img')",
             show_progress=False,
         )
 
@@ -551,12 +552,12 @@ def _gallery_ui():
                 # Only append the prompt after the ControlNet step succeeded.
                 fn=None,
                 inputs=[prompt],
-                js="(text) => appendPoseGalleryPrompt(text, 'txt2img')",
+                js="(text) => appendCharacterBuilderPrompt(text, 'txt2img')",
             )
         else:
             send_controlnet.interactive = False
 
-    return [(interface, "AI Pose Gallery", "ai-pose-gallery")]
+    return [(interface, "Character Builder", "forge-character-builder")]
 
 
 script_callbacks.on_ui_tabs(_gallery_ui)

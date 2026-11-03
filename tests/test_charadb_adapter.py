@@ -5,8 +5,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from ai_pose_gallery_core.charadb_adapter import build_catalog, find_items_file, load_catalog, parse_items
-from ai_pose_gallery_core.models import (
+from character_builder_core.charadb_adapter import build_catalog, find_items_file, load_catalog, parse_items
+from character_builder_core.models import (
     KIND_BANGS,
     KIND_EYE_COLOR,
     KIND_EYE_SHAPE,

@@ -1,4 +1,4 @@
-function appendPoseGalleryPrompt(text, tabname) {
+function appendCharacterBuilderPrompt(text, tabname) {
     const prompt = String(text || "").trim();
     if (!prompt) {
         return;

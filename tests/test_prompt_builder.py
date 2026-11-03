@@ -1,10 +1,10 @@
 import unittest
 from pathlib import Path
 
-from ai_pose_gallery_core.builder import build_character_prompt
-from ai_pose_gallery_core.charadb_adapter import load_catalog
-from ai_pose_gallery_core.models import BuilderSelection, ItemRef
-from ai_pose_gallery_core.prompts import dedupe_tags, format_outfit_keywords, join_tags, merge_tags, split_tags
+from character_builder_core.builder import build_character_prompt
+from character_builder_core.charadb_adapter import load_catalog
+from character_builder_core.models import BuilderSelection, ItemRef
+from character_builder_core.prompts import dedupe_tags, format_outfit_keywords, join_tags, merge_tags, split_tags
 
 FIXTURE = Path(__file__).parent / "fixtures" / "charadb_sample.json"
 

@@ -1,7 +1,10 @@
-# AI Pose Gallery for Forge Neo
+# Forge Character Builder
 
-[Forge Neo](https://github.com/Haoming02/sd-webui-forge-classic/tree/neo)（`neo` 分支）原生的中文姿勢、服裝與人物參考圖庫介面，搭配
-[ai-pose-gallery-zh](https://github.com/anhao/ai-pose-gallery-zh) 資料使用。
+[Forge Neo](https://github.com/Haoming02/sd-webui-forge-classic/tree/neo)（`neo` 分支）用的角色組件 Prompt Builder 與 Pose 傳送器：
+以 [CharaDB](https://github.com/taki-ttt/charadb) 的 Danbooru tags 組合髮型／眼睛／服裝，
+並把 [ai-pose-gallery-zh](https://github.com/anhao/ai-pose-gallery-zh) 的姿勢圖送到 ControlNet。
+
+> 本專案原名 `ai-pose-gallery-forge`，與 AIポーズギャラリー 及 ai-pose-gallery-zh 的作者無關聯。
 
 ## 功能
 
@@ -21,7 +24,7 @@
 
 ```text
 extensions/
-└─ ai-pose-gallery-forge/
+└─ forge-character-builder/
    ├─ scripts/
    └─ vendor/
       ├─ data/
@@ -29,9 +32,12 @@ extensions/
       └─ thumbs/
 ```
 
-也可以用環境變數 `AI_POSE_GALLERY_ROOT` 指定原始資料庫路徑。
+也可以用環境變數 `ANHAO_GALLERY_ROOT` 指定原始資料庫路徑（舊名 `AI_POSE_GALLERY_ROOT` 仍可使用）。
 
-重新啟動 Forge 後，頂部會出現「AI Pose Gallery」分頁。
+重新啟動 Forge 後，頂部會出現「Character Builder」分頁。
+
+從舊名稱升級：把 `extensions/ai-pose-gallery-forge` 資料夾改名為
+`extensions/forge-character-builder`（或重新 clone），`vendor/` 內容不用變動。
 
 ### CharaDB（選用，Character Builder 用）
 
@@ -55,7 +61,7 @@ Character Builder 的髮型／眼睛／服裝 tags 來自
 
 ## 開發與測試
 
-共用邏輯位於擴充根目錄的 `ai_pose_gallery_core/`（純 Python，不依賴 Gradio／Forge）。
+共用邏輯位於擴充根目錄的 `character_builder_core/`（純 Python，不依賴 Gradio／Forge）。
 在專案根目錄執行：
 
 ```bash
