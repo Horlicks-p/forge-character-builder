@@ -1,114 +1,245 @@
 # Forge Character Builder
 
-[Forge Neo](https://github.com/Haoming02/sd-webui-forge-classic/tree/neo)（`neo` 分支）用的角色組件 Prompt Builder 與 Pose 傳送器：
-以 [CharaDB](https://github.com/taki-ttt/charadb) 的 Danbooru tags 組合髮型／眼睛／服裝，
-並把 [ai-pose-gallery-zh](https://github.com/anhao/ai-pose-gallery-zh) 的姿勢圖送到 ControlNet。
+Forge Character Builder 是 [Forge Neo](https://github.com/Haoming02/sd-webui-forge-classic/tree/neo) 專用的角色 Prompt Builder 與姿勢圖庫擴充。
 
-> 本專案原名 `ai-pose-gallery-forge`，與 AIポーズギャラリー 及 ai-pose-gallery-zh 的作者無關聯。
+- 使用 [CharaDB](https://github.com/taki-ttt/charadb) 的 Danbooru tags 組合髮型、髮色、眼睛與服裝。
+- 使用 [ai-pose-gallery-zh](https://github.com/anhao/ai-pose-gallery-zh) 的姿勢、服裝與人像素材。
+- 將角色 Prompt 追加到既有的 txt2img Prompt，不會刪除原本的 Prompt、LoRA 或 Negative Prompt。
+- 將姿勢圖送到 txt2img 的 ControlNet Unit 1，並自動切換到 txt2img 分頁。
+- 同一姿勢的 4–5 個視角會合併為一張卡片，再由 View angle 切換。
 
-## 功能
+目前版本：**1.5.0**
 
-- 中文搜尋與分類篩選
-- 48 張一頁的延遲式素材瀏覽，避免一次載入上萬張圖片
-- 姿勢原圖／Depth 圖切換
-- 安全模式（預設隱藏 18+ 分類）
-- 送到 `txt2img + ControlNet 1`
-- 送到 `img2img`
-- 將素材提示詞送到 `txt2img`
-- 服裝關鍵字依衣物詞組插入逗號，保留 `mini skirt`、`white sneakers` 等多字詞組
+> 本專案原名 `ai-pose-gallery-forge`，與原始圖庫作者沒有從屬或合作關係。素材不包含在此外掛的 Git repository 中，必須由使用者自行下載並遵守各來源的使用條款。
 
-## 安裝
+## 系統需求
 
-建議將原始資料庫放在本擴充的 `vendor` 目錄，避免 Forge 把原始專案的
-資料維護腳本誤認成 WebUI 擴充腳本：
+- Forge Neo（`sd-webui-forge-classic` 的 `neo` 分支）。
+- Forge 內建的 ControlNet UI。若 ControlNet 無法載入，Copy／Append Prompt 仍可使用，但 Send Pose 與 Send All 會停用。
+- 一套與目前 checkpoint 架構相容的 ControlNet 模型。下方範例 `xinsirControlnetCanny_v20` 是 **SDXL** 模型。
+- CharaDB 與 Anhao 圖庫資料需自行安裝；外掛本身沒有額外的 pip 套件需求。
+
+## 安裝外掛
+
+在 Forge 的 `extensions` 目錄執行：
+
+```powershell
+git clone https://github.com/Horlicks-p/forge-character-builder.git
+```
+
+預期位置：
 
 ```text
-extensions/
-└─ forge-character-builder/
-   ├─ scripts/
-   └─ vendor/
-      ├─ data/
+Stable-diffusion-neo/
+└─ extensions/
+   └─ forge-character-builder/
+```
+
+完成下方資料安裝後重新啟動 Forge。上方分頁列會出現 **Character Builder**，內含 **Character Builder** 與 **Pose Gallery** 兩個子分頁。
+
+## 必須自行下載的資料
+
+### 1. Anhao 姿勢圖庫
+
+下載或 clone [anhao/ai-pose-gallery-zh](https://github.com/anhao/ai-pose-gallery-zh)：
+
+```powershell
+git clone --depth 1 https://github.com/anhao/ai-pose-gallery-zh.git
+```
+
+推薦只把下列三個資料夾複製到此外掛的 `vendor/`：
+
+```text
+forge-character-builder/
+└─ vendor/
+   ├─ data/
+   ├─ img/
+   └─ thumbs/
+```
+
+不需要複製 Anhao 專案的 `src/`、`scripts/`、`node_modules/`、Cloudflare 設定或其他網站程式。
+
+各功能需要的最少檔案如下：
+
+| 功能 | 索引 | 圖片 |
+|---|---|---|
+| Pose Gallery／Character Builder Pose | `data/pose-zh.json` | `img/*.png`、`thumbs/*.jpg` |
+| Pose 的 Depth 模式 | 同上 | `img/depth/*.webp`、`thumbs/depth/*.webp` |
+| Anhao Outfit | `data/costume-zh.json` | `img/costume/*.webp`、`thumbs/costume/*.webp` |
+| Portraits（預設隱藏） | `data/portrait-zh.json` | `img/portrait/*.webp`、`thumbs/portrait/*.webp` |
+
+也可以不複製資料，改用環境變數指向完整的 Anhao repository：
+
+```powershell
+$env:ANHAO_GALLERY_ROOT = "D:\path\to\ai-pose-gallery-zh"
+```
+
+舊環境變數 `AI_POSE_GALLERY_ROOT` 仍可使用，但新安裝建議使用 `ANHAO_GALLERY_ROOT`。
+
+### 2. CharaDB
+
+Character Builder 的髮型、髮色、眼睛與二次元服裝來自 [taki-ttt/charadb](https://github.com/taki-ttt/charadb)。Git repository 只包含索引與程式，完整圖片包請從 [CharaDB Releases](https://github.com/taki-ttt/charadb/releases) 下載 `charadb_public.zip`。
+
+把 ZIP 解壓到：
+
+```text
+forge-character-builder/
+└─ vendor/
+   └─ charadb/
+      ├─ data.js
+      ├─ thumb/
       ├─ img/
-      └─ thumbs/
+      └─ line/
 ```
 
-也可以用環境變數 `ANHAO_GALLERY_ROOT` 指定原始資料庫路徑（舊名 `AI_POSE_GALLERY_ROOT` 仍可使用）。
+外掛依序尋找：
 
-重新啟動 Forge 後，頂部會出現「Character Builder」分頁。
+1. `vendor/charadb/data/items_public.json`
+2. `vendor/charadb/items_public.json`
+3. `vendor/charadb/data.js`
 
-從舊名稱升級：把 `extensions/ai-pose-gallery-forge` 資料夾改名為
-`extensions/forge-character-builder`（或重新 clone），`vendor/` 內容不用變動。
+只有索引而沒有圖片時仍能產生 Prompt，但卡片會顯示 no-preview。也可用環境變數指定資料位置：
 
-### CharaDB（選用，Character Builder 用）
+```powershell
+$env:CHARADB_ROOT = "D:\path\to\charadb_public"
+```
 
-Character Builder 的髮型／眼睛／服裝 tags 來自
-[CharaDB](https://github.com/taki-ttt/charadb)。資料與圖片都需自行下載，
-本擴充不會下載或重新散布任何圖片。建議做法：把官方 Release zip 解壓縮到
-`vendor/charadb/`，結構如下：
+CharaDB 未安裝時，Pose Gallery 仍可使用，Outfit 也能改選 Anhao (Original)；髮型、髮色與眼睛選項則不會出現。
+
+### 完整目錄範例
 
 ```text
-vendor/charadb/
-  ├─ data.js          ← Release 內附的索引（或改放 data/items_public.json）
-  ├─ thumb/{id}.webp  ← Gallery 縮圖
-  ├─ img/{id}.jpg
-  └─ line/{id}.png
+forge-character-builder/
+├─ character_builder_core/
+├─ character_builder_ui/
+├─ javascript/
+├─ scripts/
+├─ vendor/
+│  ├─ charadb/
+│  │  ├─ data.js
+│  │  ├─ thumb/
+│  │  ├─ img/
+│  │  └─ line/
+│  ├─ data/
+│  ├─ img/
+│  └─ thumbs/
+├─ metadata.ini
+└─ style.css
 ```
 
-- 索引檔依序尋找 `data/items_public.json`、`items_public.json`、`data.js`；
-  有 `items_public.json` 時優先使用（保留 `color` 欄位）。
-- 也可用環境變數 `CHARADB_ROOT` 指定上述資料夾（含 `thumb/` 的那一層）。
-- 只放索引、沒有圖片時，Builder 仍可運作，縮圖顯示 no-preview。
+## ControlNet：Canny 環境與模型
 
-未安裝 CharaDB 時，Builder 的 Outfit 可改用 Anhao 服裝，既有的 Pose Gallery
-分頁照常可用。
+### 安裝 Canny 模型
 
-### 設定與資料來源狀態
+一般姿勢圖會自動把 ControlNet Unit 1 的 Preprocessor 設成 `canny`，但外掛**不會代替使用者選擇模型**。
 
-在 **Settings → Forge Character Builder** 可調整（變更後需按 Reload UI）：
+SDXL／Illustrious／Pony 類 checkpoint 可使用 Xinsir 的 Canny V2：
 
-- **Show the Portraits library in the Pose Gallery tab**：預設關閉。
-- **Offer Anhao (Original) outfits as a Character Builder outfit source**：預設開啟。
+- 官方模型頁：[xinsir/controlnet-canny-sdxl-1.0](https://huggingface.co/xinsir/controlnet-canny-sdxl-1.0)
+- V2 權重：[diffusion_pytorch_model_V2.safetensors](https://huggingface.co/xinsir/controlnet-canny-sdxl-1.0/blob/main/diffusion_pytorch_model_V2.safetensors)
+- 常見的 Forge／Civitai 檔名：`xinsirControlnetCanny_v20.safetensors`
 
-Character Builder 分頁上方的 **Data sources** 會顯示各來源的數量與狀態
-（✅ 正常、⚠️ 部分可用、⛔ 未安裝、❌ 檔案無法讀取），有問題時自動展開，
-並列出應放置的路徑或環境變數。
+下載後可保留原檔名，或改名成較容易辨認的 `xinsirControlnetCanny_v20.safetensors`，放到：
 
-### 使用方式
+```text
+Stable-diffusion-neo/
+└─ models/
+   └─ ControlNet/
+      └─ xinsirControlnetCanny_v20.safetensors
+```
 
-Character Builder 分頁有三個步驟：
+重新啟動 Forge，或在 ControlNet Model 旁按重新整理。若使用 `--controlnet-dir` 或 Forge 的額外 ControlNet model path，放入該自訂目錄也可以。
 
-1. **Character**：選髮型（Gallery）、髮色、瀏海、髮飾、眼睛顏色與眼型（Dropdown）。
-2. **Outfit**：從 CharaDB 或 Anhao 選服裝。
-3. **Pose**：Anhao 同一姿勢的各視角合併成一張卡片；點選後可在 **View angle** 切換 Front／High angle／Low angle／Side／Three-quarter（只顯示確實存在的角度）。Normal 送 `canny`、Depth 送 `None` 預處理器。
+> `xinsirControlnetCanny_v20` 是 SDXL ControlNet，不能搭配 SD 1.5 checkpoint。使用 SD 1.5 時請另外安裝 SD 1.5 Canny 模型；模型架構必須與目前 checkpoint 相容。
 
-Pose Gallery（Legacy）也支援同一姿勢多視角切換，原有服裝與 Portraits 圖庫不受影響。姿勢以「體系 + 姿勢編號」分組；本機 Anhao 資料庫共有 1,439 筆視角紀錄、288 組獨立姿勢（其中 287 組有五視角、1 組有四視角）。
+### 建議設定
 
-右側的 Final Prompt 可直接修改。**Append** 只在 txt2img Prompt 末尾追加，
-不更動既有的 Prompt、LoRA 與 Negative Prompt；**Send All** 先把 Pose 送到
-ControlNet Unit 1，成功後才追加 Prompt。Safe mode 會隱藏 18+ 素材，並清除已選的
-18+ 項目。
+1. 在 Character Builder 選擇 Pose 與 View angle。
+2. 保持 **Normal**，按 **Send Pose to ControlNet 1** 或 **Send All**。
+3. 外掛會填入 ControlNet image、啟用 Unit 1、選擇 `canny`，並切換到 txt2img。
+4. 在 ControlNet Model 手動選擇 `xinsirControlnetCanny_v20`。
+5. 可從 Weight `0.7–1.0`、Starting Control Step `0`、Ending Control Step `1` 開始調整；構圖太僵硬時降低 Weight。
 
-## ControlNet 建議
+**Send All** 會先確認 Pose 成功送入 ControlNet，才把 Final Prompt 追加到 txt2img Prompt。它不會覆蓋原 Prompt。
 
-- 普通姿勢圖：擴充會預選 `canny`，模型請選 Canny ControlNet（例如 xinsirControlnetCanny_v20）。
-- Depth 圖：擴充會預選 `None`，模型請選 Depth ControlNet。
-- 服裝與人物圖：適合送到 img2img，或自行搭配 Reference / IP-Adapter。
+### Depth 模式
+
+Depth 圖已經是處理完成的控制圖，所以外掛會把 Preprocessor 設為 `None`。此時必須手動選擇與 checkpoint 架構相容的 **Depth ControlNet**；不要繼續使用 `xinsirControlnetCanny_v20`。
+
+## 使用方式
+
+### Character Builder
+
+1. **Character**：用圖片卡片選擇 Hairstyle、Hair color、Eye color 與 Details。
+2. **Outfit**：從 CharaDB (Anime) 或 Anhao (Original) 選擇服裝。
+3. **Pose**：選擇姿勢，再從右側 View angle 切換實際存在的 Front、High angle、Low angle、Side 或 Three-quarter 視角。
+4. 在右側檢查或修改 **Final Prompt (editable)**。
+5. 使用 **Append Prompt to txt2img**、**Send Pose to ControlNet 1** 或 **Send All**。
+
+### Pose Gallery
+
+- 依 System、Category 與關鍵字篩選。
+- 同一姿勢的多視角只顯示一張卡片，選取後再切換 Pose view。
+- Normal 會使用 `canny`；Depth 會使用 `None`。
+- 可單獨送往 txt2img + ControlNet 1、img2img，或只追加 Prompt。
+
+### Settings
+
+在 **Settings → Forge Character Builder** 可設定：
+
+- **Show the Portraits library in the Pose Gallery tab**：顯示 Portraits，預設關閉。
+- **Offer Anhao (Original) outfits as a Character Builder outfit source**：允許使用 Anhao 服裝，預設開啟。
+
+變更後按 **Reload UI**。分頁上方的 **Data sources** 會顯示 CharaDB 與 Anhao 的狀態、項目數量及缺少的檔案。
+
+## 常見問題
+
+### Send Pose／Send All 是灰色的
+
+- 尚未選擇 Pose；或
+- Forge 的 ControlNet UI 沒有成功載入。請確認 txt2img 內有 ControlNet Unit，更新 Forge 後重新啟動。
+
+### ControlNet 有圖片但沒有模型
+
+模型檔不包含在此外掛內。把相容的 `.safetensors` 放入 `models/ControlNet/`，重新整理模型清單，並手動選擇模型。
+
+### Data sources 顯示 Missing／Partial
+
+展開 Data sources 查看缺少的路徑。最常見原因是 `vendor/data/pose-zh.json` 不存在，或只複製了 JSON、沒有複製 `img/` 與 `thumbs/`。
+
+### Prompt 會蓋掉我原本的內容嗎？
+
+不會。Append 與 Send All 都是在 txt2img Prompt 尾端追加並自動處理逗號；既有 Prompt、LoRA 與 Negative Prompt 不會被清除。
+
+## v1.5.0 重點
+
+- Character、Outfit、Pose 改為固定版面，不再因選取摘要出現而跳動。
+- Hairstyle、Hair color、Eye color 與 Details 改為視覺化圖片選擇器。
+- View angle 移至 Pose 預覽區，與 Pose Gallery 的操作位置一致。
+- 同一姿勢的 4–5 個視角分組顯示。
+- Send 完成後自動切換到目標 txt2img／img2img 分頁。
+- Prompt 採追加模式，不覆蓋使用者原有內容。
+- UI 僅顯示英文，並改用 Forge 主題的配色與簡潔頁首。
+- 加強資料來源診斷、Safe mode 與過期選取項目的清理。
 
 ## 開發與測試
 
-共用邏輯位於擴充根目錄的 `character_builder_core/`（純 Python，不依賴 Gradio／Forge）。
-在專案根目錄執行：
+核心邏輯位於 `character_builder_core/`，UI 位於 `character_builder_ui/`。在 repository 根目錄執行：
 
-```bash
-python -m unittest discover -s tests
+```powershell
+$env:PYTHONUTF8 = "1"
+python -m unittest discover -s tests -v
 ```
 
-若要額外對真實 CharaDB 索引驗證，設定 `CHARADB_ITEMS=<items_public.json 路徑>` 後再執行。
+要額外測試真實 CharaDB 索引，可先設定：
 
-## 授權
+```powershell
+$env:CHARADB_ITEMS = "D:\path\to\items_public.json"
+```
 
-本擴充程式碼可獨立授權；原始專案的 `img/`、`thumbs/` 與 `data/`
-不包含在其 MIT 程式碼授權內。本專案不重新散布這些素材。
+## 素材與授權
 
-- CharaDB：程式碼 MIT；`items_public.json` 的 tags／名稱為 CC0；圖片禁止再散布，
-  本專案只讀取使用者自行安裝的檔案。
+- 此 repository 不重新散布 CharaDB 或 Anhao 的圖片與資料。
+- CharaDB 的程式、tags、名稱與圖片有不同的使用條款；圖片不可重新散布。請以 [CharaDB README](https://github.com/taki-ttt/charadb#readme) 為準。
+- ai-pose-gallery-zh 的 MIT 授權只涵蓋其程式碼，不涵蓋 `img/`、`thumbs/` 與 `data/` 內的圖片和原始資料。請以 [ai-pose-gallery-zh README](https://github.com/anhao/ai-pose-gallery-zh#readme) 為準。
+- Xinsir Canny 模型採用其模型頁所列的 Apache-2.0 授權。

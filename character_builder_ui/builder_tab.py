@@ -73,6 +73,8 @@ def build_builder_tab(
     selection = gr.State(BuilderSelection())
     last_generated = gr.State("")
     hair_ids, hair_page = gr.State([]), gr.State(1)
+    hair_color_ids = gr.State([])
+    eye_color_ids = gr.State([])
     outfit_ids, outfit_page_no = gr.State([]), gr.State(1)
     pose_ids, pose_page_no = gr.State([]), gr.State(1)
 
@@ -88,37 +90,66 @@ def build_builder_tab(
             with gr.Tabs():
                 with gr.Tab("1 · Character"):
                     _hint(ctx.hairstyle_hint())
-                    hair_summary = gr.Markdown("Hairstyle: *none*")
-                    with gr.Row():
-                        hair_search = gr.Textbox(label="Search hairstyles", placeholder="e.g. twintails, bob, H010", scale=3)
-                        hair_clear = gr.Button("Clear hairstyle", scale=0, min_width=130)
-                    hair_gallery = gr.Gallery(
-                        label="Hairstyles",
-                        elem_id="fcb_hair_gallery",
-                        columns=6,
-                        height=420,
-                        object_fit="contain",
-                        allow_preview=False,
-                        show_download_button=False,
-                        show_share_button=False,
-                        elem_classes=["fcb-gallery"],
-                    )
-                    hair_pick = _pick_box("fcb_hair_gallery")
-                    with gr.Row(elem_classes=["fcb-pagination"]):
-                        hair_prev = gr.Button("Previous", min_width=90)
-                        hair_info = gr.Markdown("", elem_classes=["fcb-page-info"])
-                        hair_next = gr.Button("Next", min_width=90)
-                    with gr.Row():
-                        hair_color = gr.Dropdown(session.dropdown_choices(ctx, KIND_HAIR_COLOR), value="", label="Hair color", filterable=True)
-                        bangs = gr.Dropdown(session.dropdown_choices(ctx, KIND_BANGS), value="", label="Bangs", filterable=True)
-                        accessory = gr.Dropdown(session.dropdown_choices(ctx, KIND_HAIR_ACCESSORY), value="", label="Hair accessory", filterable=True)
-                    with gr.Row():
-                        eye_color = gr.Dropdown(session.dropdown_choices(ctx, KIND_EYE_COLOR), value="", label="Eye color", filterable=True)
-                        eye_shape = gr.Dropdown(session.dropdown_choices(ctx, KIND_EYE_SHAPE), value="", label="Eye shape", filterable=True)
+                    with gr.Tabs(elem_classes=["fcb-character-parts"]):
+                        with gr.Tab("Hairstyle"):
+                            with gr.Row():
+                                hair_search = gr.Textbox(label="Search hairstyles", placeholder="e.g. twintails, bob, H010", scale=3)
+                                hair_clear = gr.Button("Clear hairstyle", scale=0, min_width=130)
+                            hair_gallery = gr.Gallery(
+                                label="Hairstyles",
+                                elem_id="fcb_hair_gallery",
+                                columns=6,
+                                height=420,
+                                object_fit="contain",
+                                allow_preview=False,
+                                show_download_button=False,
+                                show_share_button=False,
+                                elem_classes=["fcb-gallery"],
+                            )
+                            hair_pick = _pick_box("fcb_hair_gallery")
+                            with gr.Row(elem_classes=["fcb-pagination"]):
+                                hair_prev = gr.Button("Previous", min_width=90)
+                                hair_info = gr.Markdown("", elem_classes=["fcb-page-info"])
+                                hair_next = gr.Button("Next", min_width=90)
+
+                        with gr.Tab("Hair color"):
+                            hair_color_clear = gr.Button("Clear hair color", scale=0, min_width=130)
+                            hair_color_gallery = gr.Gallery(
+                                label="Hair colors",
+                                elem_id="fcb_hair_color_gallery",
+                                columns=6,
+                                height=420,
+                                object_fit="contain",
+                                allow_preview=False,
+                                show_download_button=False,
+                                show_share_button=False,
+                                elem_classes=["fcb-gallery", "fcb-option-gallery"],
+                            )
+                            hair_color_pick = _pick_box("fcb_hair_color_gallery")
+
+                        with gr.Tab("Eye color"):
+                            eye_color_clear = gr.Button("Clear eye color", scale=0, min_width=130)
+                            eye_color_gallery = gr.Gallery(
+                                label="Eye colors",
+                                elem_id="fcb_eye_color_gallery",
+                                columns=6,
+                                height=420,
+                                object_fit="contain",
+                                allow_preview=False,
+                                show_download_button=False,
+                                show_share_button=False,
+                                elem_classes=["fcb-gallery", "fcb-option-gallery"],
+                            )
+                            eye_color_pick = _pick_box("fcb_eye_color_gallery")
+
+                        with gr.Tab("Details"):
+                            with gr.Row():
+                                bangs = gr.Dropdown(session.dropdown_choices(ctx, KIND_BANGS), value="", label="Bangs", filterable=True)
+                                accessory = gr.Dropdown(session.dropdown_choices(ctx, KIND_HAIR_ACCESSORY), value="", label="Hair accessory", filterable=True)
+                            eye_shape = gr.Dropdown(session.dropdown_choices(ctx, KIND_EYE_SHAPE), value="", label="Eye shape", filterable=True)
 
                 with gr.Tab("2 · Outfit"):
                     _hint(ctx.outfit_hint(show_anhao_outfits))
-                    outfit_summary = gr.Markdown("Outfit: *none*")
                     with gr.Row():
                         outfit_source = gr.Radio(outfit_sources, value=default_outfit_source or None, label="Source")
                         outfit_category = gr.Dropdown([session.ALL], value=session.ALL, label="Category")
@@ -145,14 +176,12 @@ def build_builder_tab(
 
                 with gr.Tab("3 · Pose"):
                     _hint(ctx.pose_hint())
-                    pose_summary = gr.Markdown("Pose: *none*")
                     with gr.Row():
                         pose_search = gr.Textbox(label="Search poses", placeholder="Category, angle, or ID", scale=2)
                         pose_system = gr.Dropdown([session.ALL], value=session.ALL, label="System")
                         pose_category = gr.Dropdown([session.ALL], value=session.ALL, label="Category")
                     with gr.Row():
                         pose_mode = gr.Radio(POSE_MODES, value="Normal", label="Control image")
-                        pose_angle = gr.Radio([], value=None, label="View angle", interactive=False, visible=False)
                         pose_clear = gr.Button("Clear pose", scale=0, min_width=110)
                     pose_gallery = gr.Gallery(
                         label="Poses",
@@ -172,6 +201,7 @@ def build_builder_tab(
                         pose_next = gr.Button("Next", min_width=90)
 
         with gr.Column(scale=2, min_width=320, elem_classes=["fcb-inspector"]):
+            pose_angle = gr.Radio([], value=None, label="View angle", interactive=False, visible=False)
             pose_preview = gr.Image(label="Selected pose", type="filepath", height=240, interactive=False)
             appearance_box = gr.Textbox(label="Appearance", interactive=False, lines=2)
             outfit_box = gr.Textbox(label="Outfit", interactive=False, lines=2)
@@ -211,10 +241,7 @@ def build_builder_tab(
         last_generated,
         edited_md,
         status_md,
-        hair_summary,
-        outfit_summary,
         outfit_raw,
-        pose_summary,
         pose_preview,
         pose_angle,
         send_pose_button,
@@ -223,8 +250,8 @@ def build_builder_tab(
 
     def view(sel: BuilderSelection, final: str, last: str, safe: bool, *, force: bool = False, notices=()) -> dict:
         update = session.regenerate(ctx, sel, final, last, bool(safe), force=force)
-        outfit_md, raw = session.outfit_summary(ctx, sel)
-        pose_md, preview = session.pose_summary(ctx, sel)
+        _, raw = session.outfit_summary(ctx, sel)
+        _, preview = session.pose_summary(ctx, sel)
         angles = session.pose_angle_choices(ctx, sel)
         selected_angle = sel.pose.item_id if sel.pose is not None else None
         can_send = controlnet_ok and sel.pose is not None
@@ -236,10 +263,7 @@ def build_builder_tab(
             last_generated: update.last_generated,
             edited_md: update.notice,
             status_md: session.join_notices([*notices, *update.warnings]),
-            hair_summary: session.hairstyle_summary(ctx, sel),
-            outfit_summary: outfit_md,
             outfit_raw: raw,
-            pose_summary: pose_md,
             pose_preview: preview,
             pose_angle: gr.update(
                 choices=angles,
@@ -296,14 +320,31 @@ def build_builder_tab(
     for component, field in (
         (bangs, "bangs"),
         (accessory, "hair_accessory"),
-        (eye_color, "eye_color"),
         (eye_shape, "eye_shape"),
     ):
         component.change(set_slot(field), [component, selection, *prompt_inputs], view_outputs, show_progress=False)
 
-    hair_color.change(
-        set_slot("hair_color"), [hair_color, selection, *prompt_inputs], view_outputs, show_progress=False
+    def pick_character_option(field: str):
+        def handler(pick, ids, sel, final, last, safe):
+            index = _parse_pick(pick)
+            if index is None or not 0 <= index < len(ids):
+                return view(sel, final, last, safe)
+            return view(sel.with_changes(**{field: ItemRef(CHARADB_SOURCE, ids[index])}), final, last, safe)
+
+        return handler
+
+    hair_color_pick.change(
+        pick_character_option("hair_color"),
+        [hair_color_pick, hair_color_ids, selection, *prompt_inputs],
+        view_outputs,
+        show_progress=False,
     ).then(hair_gallery_update, [hair_search, hair_page, selection], hair_gallery_outputs, show_progress=False)
+    eye_color_pick.change(
+        pick_character_option("eye_color"),
+        [eye_color_pick, eye_color_ids, selection, *prompt_inputs],
+        view_outputs,
+        show_progress=False,
+    )
 
     def pick_hairstyle(pick, ids, sel, final, last, safe):
         index = _parse_pick(pick)
@@ -314,6 +355,18 @@ def build_builder_tab(
     hair_pick.change(pick_hairstyle, [hair_pick, hair_ids, selection, *prompt_inputs], view_outputs, show_progress=False)
     hair_clear.click(
         lambda sel, final, last, safe: view(sel.with_changes(hairstyle=None, hairstyle_variant=None), final, last, safe),
+        [selection, *prompt_inputs],
+        view_outputs,
+        show_progress=False,
+    )
+    hair_color_clear.click(
+        lambda sel, final, last, safe: view(sel.with_changes(hair_color=None), final, last, safe),
+        [selection, *prompt_inputs],
+        view_outputs,
+        show_progress=False,
+    ).then(hair_gallery_update, [hair_search, hair_page, selection], hair_gallery_outputs, show_progress=False)
+    eye_color_clear.click(
+        lambda sel, final, last, safe: view(sel.with_changes(eye_color=None), final, last, safe),
         [selection, *prompt_inputs],
         view_outputs,
         show_progress=False,
@@ -478,6 +531,10 @@ def build_builder_tab(
 
     load_outputs = [
         *hair_gallery_outputs,
+        hair_color_gallery,
+        hair_color_ids,
+        eye_color_gallery,
+        eye_color_ids,
         outfit_category,
         *outfit_gallery_outputs,
         pose_system,
@@ -487,6 +544,8 @@ def build_builder_tab(
 
     def initial_load() -> dict:
         hair = session.hairstyle_page(ctx, "", 1, None)
+        hair_colors = session.character_option_page(ctx, KIND_HAIR_COLOR)
+        eye_colors = session.character_option_page(ctx, KIND_EYE_COLOR)
         outfit = session.outfit_page(ctx, default_outfit_source, session.ALL, "", True, 1)
         pose = session.pose_page(ctx, "", session.ALL, session.ALL, True, False, 1)
         systems, categories = session.pose_filter_options(ctx, True)
@@ -495,6 +554,10 @@ def build_builder_tab(
             hair_ids: hair.ids,
             hair_page: hair.page,
             hair_info: hair.info,
+            hair_color_gallery: hair_colors.images,
+            hair_color_ids: hair_colors.ids,
+            eye_color_gallery: eye_colors.images,
+            eye_color_ids: eye_colors.ids,
             outfit_category: gr.update(choices=session.outfit_categories(ctx, default_outfit_source, True), value=session.ALL),
             outfit_gallery: outfit.images,
             outfit_ids: outfit.ids,

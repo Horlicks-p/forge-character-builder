@@ -6,7 +6,7 @@ from pathlib import Path
 from character_builder_core import anhao, session
 from character_builder_core.assets import PLACEHOLDER_IMAGE, safe_join
 from character_builder_core.charadb_adapter import find_image_root, find_items_file, load_catalog, parse_items
-from character_builder_core.models import KIND_EYE_SHAPE, BuilderSelection, ItemRef
+from character_builder_core.models import KIND_EYE_COLOR, KIND_EYE_SHAPE, KIND_HAIR_COLOR, BuilderSelection, ItemRef
 from helpers import CHARADB_FIXTURE, make_anhao, make_charadb_images
 
 
@@ -132,6 +132,13 @@ class GalleryTests(TempDataTest):
         page = session.hairstyle_page(self.ctx, "", 1, "H049")
         self.assertTrue(page.images[0][0].endswith("H001-black.webp"))
         self.assertEqual(session.hairstyle_page(self.ctx, "twin", 1).ids, ["H010"])
+
+    def test_character_option_galleries(self):
+        colors = session.character_option_page(self.ctx, KIND_HAIR_COLOR)
+        self.assertEqual(colors.ids, ["H049", "H052", "H066"])
+        self.assertEqual(colors.images[0][0], str(PLACEHOLDER_IMAGE))
+        eyes = session.character_option_page(self.ctx, KIND_EYE_COLOR)
+        self.assertEqual(eyes.ids, ["H095", "H097"])
 
     def test_outfit_pages(self):
         charadb_page = session.outfit_page(self.ctx, "charadb", "All", "", True, 1)

@@ -342,12 +342,12 @@ def _gallery_ui():
     with gr.Blocks(elem_id="forge_character_builder") as interface:
         gr.HTML(
             f"""
-            <header class="fcb-hero">
+            <header class="fcb-heading">
               <div>
                 <h1>Forge Character Builder</h1>
                 <p>Build Danbooru-style character prompts and send a pose to ControlNet.</p>
               </div>
-              <div class="fcb-count">{_reference_count(ctx):,} <span>REFERENCES</span></div>
+              <div class="fcb-count"><strong>{_reference_count(ctx):,}</strong> references</div>
             </header>
             """
         )

@@ -36,11 +36,24 @@ class UIBuildTests(unittest.TestCase):
         self.assertEqual(gradio.__version__, "4.40.0")
         _, config = self._serve(with_controlnet=True)
         labels = {c.get("props", {}).get("label") for c in config["components"]}
-        for label in ("Character Builder", "Pose Gallery", "Final Prompt (editable)", "Hair color", "Eye shape", "Hairstyles", "Outfits", "Poses", "View angle", "Pose view"):
+        for label in ("Character Builder", "Pose Gallery", "Final Prompt (editable)", "Hair colors", "Eye colors", "Eye shape", "Hairstyles", "Outfits", "Poses", "View angle", "Pose view"):
             self.assertIn(label, labels)
         values = {str(c.get("props", {}).get("value")) for c in config["components"]}
         self.assertIn("Send All", values)
+        self.assertNotIn("Hairstyle: *none*", values)
+        self.assertNotIn("Outfit: *none*", values)
+        self.assertFalse(any(value.startswith("Pose: *none*") for value in values))
         self.assertGreater(len(config["dependencies"]), 40)
+
+    def test_character_visual_choices_use_click_bridge(self):
+        _, config = self._serve(with_controlnet=True)
+        by_elem = {c["props"]["elem_id"]: c["id"] for c in config["components"] if c.get("props", {}).get("elem_id")}
+        for gallery in ("fcb_hair_color_gallery", "fcb_eye_color_gallery"):
+            self.assertIn(gallery, by_elem)
+            pick_id = by_elem[f"{gallery}_pick"]
+            self.assertTrue(
+                any(pick_id in dep["outputs"] or any(t == [pick_id, "change"] for t in dep["targets"]) for dep in config["dependencies"])
+            )
 
     @staticmethod
     def _choices(config, label):

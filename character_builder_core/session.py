@@ -166,6 +166,16 @@ def hairstyle_page(ctx: BuilderContext, query: str, page: object, hair_color_id:
     return GalleryPage(images, [i.item_id for i in page_items], page, total_pages, len(styles))
 
 
+def character_option_page(ctx: BuilderContext, kind: str) -> GalleryPage:
+    """Small CharaDB sets rendered as image choices instead of dropdowns."""
+    items = ctx.charadb.list_kind(kind)
+    images = [
+        (str(ctx.charadb.thumbnail(item.item_id) or ctx.placeholder), _caption(item))
+        for item in items
+    ]
+    return GalleryPage(images, [item.item_id for item in items], 1, 1, len(items))
+
+
 def outfit_items(ctx: BuilderContext, source: str, category: str, query: str, safe_mode: bool) -> list[CatalogItem]:
     if source == CHARADB_SOURCE:
         items = ctx.charadb.list_kind(KIND_OUTFIT, safe_mode=safe_mode)
