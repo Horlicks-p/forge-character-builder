@@ -151,7 +151,7 @@ def pose_group_caption(root: Optional[Path], record: dict) -> str:
     number = str(record.get("姿势编号") or record.get("id", ""))
     category = english_value(record.get("分类", "Pose"))
     count = len(pose_views(root, record))
-    return f"{category} · {number}\\n{count} view{'s' if count != 1 else ''}"
+    return f"{category} · {number}\n{count} view{'s' if count != 1 else ''}"
 
 
 def find_gallery_root(extension_root: Path, environ: Optional[Mapping[str, str]] = None) -> Optional[Path]:
