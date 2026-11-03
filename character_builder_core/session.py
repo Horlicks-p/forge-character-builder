@@ -218,12 +218,14 @@ def pose_page(
     depth: bool,
     page: object,
 ) -> GalleryPage:
-    items = anhao.filtered_items(ctx.anhao_root, "Poses", query, primary, secondary, safe_mode)
+    items = anhao.pose_group_representatives(
+        anhao.filtered_items(ctx.anhao_root, "Poses", query, primary, secondary, safe_mode)
+    )
     page_items, page, total_pages = _paginate(items, page)
     images = []
     for item in page_items:
         thumb = anhao.asset_path(ctx.anhao_root, "Poses", item, thumbnail=True, use_depth=depth)
-        images.append((str(thumb if thumb.is_file() else ctx.placeholder), anhao.caption("Poses", item)))
+        images.append((str(thumb if thumb.is_file() else ctx.placeholder), anhao.pose_group_caption(ctx.anhao_root, item)))
     return GalleryPage(images, [str(i.get("id", "")) for i in page_items], page, total_pages, len(items))
 
 
@@ -244,6 +246,26 @@ def pose_record(ctx: BuilderContext, ref: Optional[ItemRef]) -> Optional[dict]:
     if ref is None or ref.source_id != anhao.POSE_SOURCE:
         return None
     return anhao.find_item(ctx.anhao_root, "Poses", ref.item_id)
+
+
+
+def pose_angle_choices(ctx: BuilderContext, selection: BuilderSelection) -> list[tuple[str, str]]:
+    """Available angles and their exact source record IDs for the selected pose."""
+    record = pose_record(ctx, selection.pose)
+    if record is None:
+        return []
+    return [
+        (anhao.english_value(item.get("角度", "")) or str(item.get("id", "")), str(item.get("id", "")))
+        for item in anhao.pose_views(ctx.anhao_root, record)
+    ]
+
+
+def select_pose_angle(ctx: BuilderContext, selection: BuilderSelection, item_id: object) -> BuilderSelection:
+    """Only accept an angle belonging to the currently selected logical pose."""
+    selected_id = str(item_id or "")
+    if selected_id and selected_id in {value for _, value in pose_angle_choices(ctx, selection)}:
+        return selection.with_changes(pose=ItemRef(anhao.POSE_SOURCE, selected_id))
+    return selection
 
 
 def hairstyle_summary(ctx: BuilderContext, selection: BuilderSelection) -> str:
@@ -279,7 +301,9 @@ def pose_summary(ctx: BuilderContext, selection: BuilderSelection) -> tuple[str,
         return f"Pose: *unavailable* (#{selection.pose.item_id})", None
     depth = selection.pose_mode == "depth"
     thumb = anhao.asset_path(ctx.anhao_root, "Poses", record, thumbnail=True, use_depth=depth)
-    summary = f"Pose: **{anhao.item_title('Poses', record)}** (#{selection.pose.item_id}) · {pose_mode_label(depth)}"
+    angle = anhao.english_value(record.get("角度", ""))
+    number = str(record.get("姿势编号") or record.get("id", ""))
+    summary = f"Pose: **{anhao.item_title('Poses', record)}** ({number} / #{selection.pose.item_id}) · {angle} · {pose_mode_label(depth)}"
     return summary, (str(thumb) if thumb.is_file() else str(ctx.placeholder))
 
 
