@@ -1,6 +1,6 @@
 # Forge Character Builder 功能設計書 / TODO
 
-> **文件版本：** v1.3（2026-11-03；見文末「修訂紀錄」）  
+> **文件版本：** v1.4（2026-11-03；見文末「修訂紀錄」）  
 > **目標專案：** https://github.com/Horlicks-p/forge-character-builder  
 > **目標執行環境：** [Haoming02/sd-webui-forge-classic](https://github.com/Haoming02/sd-webui-forge-classic) `neo` 分支、Gradio 4.40.0、Neo 內建 ControlNet（`sd_forge_controlnet`）。  
 > **用途：** 交由 Claude Code / Codex 實作的技術規格與驗收清單  
@@ -184,7 +184,7 @@ Neo 使用 Gradio 4.40.0，巢狀 `gr.Tabs` 可正常使用；**仍以實際相�
 
 ### 4.4 Step 3 — Pose
 
-- 沿用 Anhao `pose-zh.json`、既有 Gallery 分頁與 safe mode 筛選；保留完整編號、原始名稱、視角、分類。
+- 沿用 Anhao `pose-zh.json`、既有 Gallery 分頁與 safe mode 篩選；保留完整編號、原始名稱、視角、分類。**同一姿勢只佔 Gallery 一格，依 `(體系, 姿势编号)` 分組，避免不同體系的 `P001` 相撞；選取後顯示實際可用的四／五個角度，沒有的角度不可造假。**
 - 選定 Pose 後在 Builder 中顯示縮圖、詳細資訊、`Normal` / `Depth` 切換。
 - **MVP 的 Pose tags 預設留空**。現有 `_prompt_for()` 對 Pose 的輸出（如 `Front view, Standing, Single-person full body — standard, character pose reference`）不是 Danbooru tag，部分翻譯還帶 NSFW 語意，**不得帶入 Builder 的 Final Prompt**。Pose 的作用由 ControlNet 承擔；使用者需要時可在 Final Prompt 手動補動作 tags。
 - 小型可靠對照表（如 `站姿 → standing`、`侧面 → from side`、`俯视 → from above`、`仰视 → from below`）列為 Phase 4，須先確認 Anhao 欄位語意後才啟用。
@@ -435,6 +435,19 @@ class CatalogItem:
 
 **完成條件：** 在實際 Forge Neo + ControlNet 上完成一輪「Hair + Eyes + CharaDB Outfit + Anhao Pose → Send All（`.success()`）→ txt2img Prompt + ControlNet Unit 1」，並記錄驗收時的 Neo commit SHA。這是本專案**最重要的 MVP 交付點**。
 
+### Phase 2B — Anhao 多視角姿勢（獨立 PR；待實機驗收）
+
+> 分支：`feat/pose-view-grouping`，由 Phase 4A 的 `feat/phase4-source-ux` 分出；**不要在 PR #3/#4 尚未驗收時直接合併 main**。
+
+- [x] `pose-zh.json` 依 `(體系, 姿势编号)` 分組；缺少編號時按原 item ID 個別顯示。
+- [x] Character Builder 的 Pose Gallery 一組只佔一格，新增 View angle 控制；切換更新實際 `item_id` 與預覽。
+- [x] Legacy Pose Gallery 亦加入 Pose view 選擇器；切換後圖片、Prompt 和送圖的來源一致。
+- [x] 四視角資料僅列出實際存在的角度；Normal／Depth 均在送出時解析當下選定圖片。
+- [x] 新增純 Python 測試案例（自製資料：分組、缺角度、跨體系防護、ControlNet 圖片路徑）。
+- [ ] 執行完整 unittest 與 Gradio 4.40 harness / Browser UI 驗證；確認角度切換與回呼不發生競態。
+- [ ] 在 Forge Neo 實機驗收 Builder 與 Legacy 兩種角度選擇，測試 Normal／Depth、Send All、Safe Mode。
+- [ ] 依 PR #3 → PR #4 → 本 PR 的順序驗收與合併，必要時 rebase。
+
 ### Phase 3 — AI Costume Anime Gallery 來源（非阻塞擴充，可能取消）
 
 > **狀態：Deferred（2026-11-03）。** 本 Phase 非阻塞，暫不實作，直接進行 Phase 4A；日後若重啟，需先完成下列授權與 metadata 查證。
@@ -587,6 +600,7 @@ class CatalogItem:
 
 ## 修訂紀錄
 
+- **v1.4（2026-11-03）** 新增 Phase 2B：Anhao 多視角姿勢分組與角度選擇器。原資料 1,439 筆視角紀錄，按 `(體系, 姿势编号)` 得 288 組姿勢（287 組五視角、1 組四視角）。Builder 與 Legacy 程式、單元測試已提交獨立分支；Gradio harness 與 Forge Neo 實機驗收尚待執行。
 - **v1.3（2026-11-03）** 反映實際進度與審查修正：
   - 新增 0.1「目前 PR 狀態」：PR #1、#2 已合併；PR #3（Phase 2）與 PR #4（Phase 4A，stacked）為 Draft、待 Forge Neo 實機驗收。
   - Phase 0 已確認項目打勾（PR #1 合併、`vendor/` 已忽略）；Phase 1 標為已合併。
