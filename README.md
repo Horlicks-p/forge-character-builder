@@ -42,16 +42,38 @@ extensions/
 ### CharaDB（選用，Character Builder 用）
 
 Character Builder 的髮型／眼睛／服裝 tags 來自
-[CharaDB](https://github.com/taki-ttt/charadb)。請自行下載官方的
-`data/items_public.json`，放到下列任一位置：
+[CharaDB](https://github.com/taki-ttt/charadb)。資料與圖片都需自行下載，
+本擴充不會下載或重新散布任何圖片。建議做法：把官方 Release zip 解壓縮到
+`vendor/charadb/`，結構如下：
 
-- `vendor/charadb/data/items_public.json`
-- 或以環境變數 `CHARADB_ROOT` 指定 CharaDB 根目錄（其下的 `data/items_public.json`）
+```text
+vendor/charadb/
+  ├─ data.js          ← Release 內附的索引（或改放 data/items_public.json）
+  ├─ thumb/{id}.webp  ← Gallery 縮圖
+  ├─ img/{id}.jpg
+  └─ line/{id}.png
+```
 
-未安裝時，既有的 Pose Gallery 功能照常可用。CharaDB 的圖片包請從官方 Release
-自行解壓縮，本擴充不會下載或重新散布任何圖片。
+- 索引檔依序尋找 `data/items_public.json`、`items_public.json`、`data.js`；
+  有 `items_public.json` 時優先使用（保留 `color` 欄位）。
+- 也可用環境變數 `CHARADB_ROOT` 指定上述資料夾（含 `thumb/` 的那一層）。
+- 只放索引、沒有圖片時，Builder 仍可運作，縮圖顯示 no-preview。
 
-> 目前（Phase 1）只完成資料轉換與 Prompt 組裝核心，Character Builder 介面將於 Phase 2 加入。
+未安裝 CharaDB 時，Builder 的 Outfit 可改用 Anhao 服裝，既有的 Pose Gallery
+分頁照常可用。
+
+### 使用方式
+
+Character Builder 分頁有三個步驟：
+
+1. **Character**：選髮型（Gallery）、髮色、瀏海、髮飾、眼睛顏色與眼型（Dropdown）。
+2. **Outfit**：從 CharaDB 或 Anhao 選服裝。
+3. **Pose**：選 Anhao Pose，Normal 送 `canny`、Depth 送 `None` 預處理器。
+
+右側的 Final Prompt 可直接修改。**Append** 只在 txt2img Prompt 末尾追加，
+不更動既有的 Prompt、LoRA 與 Negative Prompt；**Send All** 先把 Pose 送到
+ControlNet Unit 1，成功後才追加 Prompt。Safe mode 會隱藏 18+ 素材，並清除已選的
+18+ 項目。
 
 ## ControlNet 建議
 

@@ -409,12 +409,14 @@ class CatalogItem:
 
 ### Phase 2 — Character Builder UI + 現有 Pose（第二個功能 PR；MVP）
 
-- [ ] 增加 Character Builder 介面（Step 1/2/3 + Final Preview）。
-- [ ] Hairstyle / Outfit 用圖片 Gallery；Hair Color、Bangs、Hair Accessory、Eye Color、Eye Shape 用 Dropdown。支援搜尋、選擇、清空及預覽（本機圖片缺少時可顯示 no-preview）。
-- [ ] 沿用 Anhao 的 Pose browser／Normal/Depth、ID、safe mode；可以在 Builder 選 Pose；Pose 不產生 tags。
-- [ ] 支援 `Copy`、`Append Prompt`、`Send Pose`、**`Send All`**；Send All 以 `.success()` 串接。
-- [ ] `Send All` 的預處理器正確，保留既有 Prompt、LoRA、Negative Prompt、ControlNet 模型。
-- [ ] 既有 Gallery 操作保持可用；不要直接刪除 Portraits 或 img2img 功能。
+- [x] 增加 Character Builder 介面（Step 1/2/3 + Final Preview）。
+- [x] Hairstyle / Outfit 用圖片 Gallery；Hair Color、Bangs、Hair Accessory、Eye Color、Eye Shape 用 Dropdown。支援搜尋、選擇、清空及預覽（本機圖片缺少時可顯示 no-preview）。
+- [x] 沿用 Anhao 的 Pose browser／Normal/Depth、ID、safe mode；可以在 Builder 選 Pose；Pose 不產生 tags。
+- [x] 支援 `Copy`、`Append Prompt`、`Send Pose`、**`Send All`**；Send All 以 `.success()` 串接。
+- [x] `Send All` 的預處理器正確，保留既有 Prompt、LoRA、Negative Prompt、ControlNet 模型。
+- [x] 既有 Gallery 操作保持可用；不要直接刪除 Portraits 或 img2img 功能。
+
+> 狀態：程式已在分支 `feat/phase2-character-builder-ui` 完成（2026-11-03），並以 Gradio 4.40 模擬 Forge 的 harness + Playwright 驗證；上列勾選代表 harness 驗證通過。**實機 Forge Neo 驗收（下方完成條件）仍待完成，為合併前提。**
 
 **完成條件：** 在實際 Forge Neo + ControlNet 上完成一輪「Hair + Eyes + CharaDB Outfit + Anhao Pose → Send All（`.success()`）→ txt2img Prompt + ControlNet Unit 1」，並記錄驗收時的 Neo commit SHA。這是本專案**最重要的 MVP 交付點**。
 
@@ -540,7 +542,7 @@ class CatalogItem:
 - [ ] Anime Costume 官方網站當時的實際授權／批次抓圖限制（本文件的來源說明不取代官方條款）。
 - [ ] 是否存在官方可直接重用的**純 metadata**、其授權與檔名／欄位／數量。
 - [ ] 遠端縮圖允許的實際 URL 與載入行為（HTTP、CORS、防盜鏈）；**不假設**瀏覽器能取圖就允許重新打包。
-- [ ] CharaDB Release 解包後圖片的實際路徑與檔案命名（Phase 2 前）。
+- [x] CharaDB Release 解包後圖片的實際路徑與檔案命名（Phase 2 前）。
 
 ### 回家實機時確認
 
