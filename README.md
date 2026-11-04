@@ -10,8 +10,6 @@ Forge Character Builder 是 [Forge Neo](https://github.com/Haoming02/sd-webui-fo
 
 目前版本：**1.5.2**
 
-> 本專案原名 `ai-pose-gallery-forge`，與原始圖庫作者沒有從屬或合作關係。素材不包含在此外掛的 Git repository 中，必須由使用者自行下載並遵守各來源的使用條款。
-
 ## 系統需求
 
 - Forge Neo（`sd-webui-forge-classic` 的 `neo` 分支）。
