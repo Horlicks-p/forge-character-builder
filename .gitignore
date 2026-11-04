@@ -4,3 +4,6 @@ vendor/
 
 .playwright-mcp/
 tests/harness/*.pyi
+
+# Local planning notes (kept out of the repo)
+Forge_Character_Builder_Design_TODO.md
