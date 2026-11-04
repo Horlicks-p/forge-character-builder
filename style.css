@@ -64,8 +64,14 @@
 }
 
 #tab_forge-character-builder .fcb-workbench {
-  align-items: stretch;
   gap: 0.7rem;
+}
+
+/* Columns keep their natural height; character_builder.js sizes the visible
+   gallery so the left column ends level with the inspector. */
+#tab_forge-character-builder .fcb-workbench,
+#tab_forge-character-builder .fcb-builder {
+  align-items: flex-start !important;
 }
 
 #tab_forge-character-builder .fcb-browser,
@@ -82,49 +88,6 @@
 
 #tab_forge-character-builder .fcb-inspector {
   background: var(--fcb-paper);
-}
-
-/* On desktop the inspector determines the workbench height. Let the gallery
-   consume the matching space so the left column ends with its pagination,
-   instead of leaving an empty block below a fixed-height gallery. */
-@media (min-width: 901px) {
-  #tab_forge-character-builder .fcb-builder-steps > .tabs,
-  #tab_forge-character-builder .fcb-builder-steps > .tabs > .tabitem,
-  #tab_forge-character-builder .fcb-builder-steps > .tabs > .tabitem > .gap,
-  #tab_forge-character-builder .fcb-character-parts,
-  #tab_forge-character-builder .fcb-character-parts > .tabitem,
-  #tab_forge-character-builder .fcb-character-parts > .tabitem > .gap {
-    min-height: 0;
-  }
-
-  #tab_forge-character-builder .fcb-builder-steps > .tabs,
-  #tab_forge-character-builder .fcb-character-parts {
-    display: flex;
-    flex: 1 1 auto;
-    flex-direction: column;
-  }
-
-  #tab_forge-character-builder .fcb-builder-steps > .tabs > .tabitem,
-  #tab_forge-character-builder .fcb-character-parts > .tabitem {
-    flex: 1 1 auto;
-  }
-
-  #tab_forge-character-builder .fcb-builder-steps > .tabs > .tabitem > .gap,
-  #tab_forge-character-builder .fcb-character-parts > .tabitem > .gap {
-    height: 100%;
-  }
-
-  #tab_forge-character-builder .fcb-builder-steps .fcb-gallery {
-    flex: 1 1 auto;
-    height: auto !important;
-    min-height: 420px;
-  }
-
-  #tab_forge-character-builder .fcb-browser > .fcb-gallery {
-    flex: 1 1 auto;
-    height: auto !important;
-    min-height: 590px;
-  }
 }
 
 #tab_forge-character-builder .fcb-gallery .grid-wrap {

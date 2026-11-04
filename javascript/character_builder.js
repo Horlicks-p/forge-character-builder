@@ -94,6 +94,101 @@ if (typeof document !== "undefined" && !window.__characterBuilderPickInstalled) 
     document.addEventListener("click", characterBuilderPickFromClick, true);
 }
 
+// Gallery height. The left column (gallery + pagination) should end level
+// with the inspector on the right. Forge's own CSS defeats a pure flexbox
+// solution, so measure both columns and give the visible gallery the
+// difference, within sane bounds (a tall inspector, e.g. with Advanced open,
+// must not turn the gallery into a long empty box).
+const CHARACTER_BUILDER_GALLERY_MIN = 420;
+const CHARACTER_BUILDER_GALLERY_MAX = 1100;
+const CHARACTER_BUILDER_LAYOUTS = [
+    [".fcb-workbench", ".fcb-browser"],
+    [".fcb-builder", ".fcb-builder-steps"],
+];
+
+function computeCharacterBuilderGalleryHeight(current, leftBottom, rightBottom) {
+    const wanted = Math.round(current + (rightBottom - leftBottom));
+    return Math.max(CHARACTER_BUILDER_GALLERY_MIN, Math.min(CHARACTER_BUILDER_GALLERY_MAX, wanted));
+}
+
+function characterBuilderSyncGalleries() {
+    const root = gradioApp().querySelector("#tab_forge-character-builder");
+    if (!root) {
+        return;
+    }
+    const desktop = window.innerWidth > 900;
+    for (const [rowSelector, leftSelector] of CHARACTER_BUILDER_LAYOUTS) {
+        for (const row of root.querySelectorAll(rowSelector)) {
+            const left = row.querySelector(`:scope > ${leftSelector}`);
+            const right = row.querySelector(":scope > .fcb-inspector");
+            if (!left || !right || left.offsetParent === null) {
+                continue;
+            }
+            const galleries = Array.from(left.querySelectorAll(".fcb-gallery")).filter((g) => g.offsetParent !== null);
+            const gallery = galleries[galleries.length - 1];
+            if (!gallery) {
+                continue;
+            }
+            if (!desktop) {
+                gallery.style.removeProperty("height");
+                continue;
+            }
+            const current = gallery.getBoundingClientRect().height;
+            const height = computeCharacterBuilderGalleryHeight(
+                current,
+                left.getBoundingClientRect().bottom,
+                right.getBoundingClientRect().bottom,
+            );
+            if (Math.abs(height - current) > 2) {
+                gallery.style.setProperty("height", `${height}px`, "important");
+            }
+        }
+    }
+}
+
+function characterBuilderInstallGallerySync() {
+    let pending = false;
+    const schedule = () => {
+        if (!pending) {
+            pending = true;
+            requestAnimationFrame(() => {
+                pending = false;
+                characterBuilderSyncGalleries();
+            });
+        }
+    };
+    const observer = new ResizeObserver(schedule);
+    const observed = new WeakSet();
+    const attach = () => {
+        const root = gradioApp().querySelector("#tab_forge-character-builder");
+        if (!root) {
+            return false;
+        }
+        const columns = root.querySelectorAll(".fcb-browser, .fcb-builder-steps, .fcb-inspector");
+        for (const column of columns) {
+            if (!observed.has(column)) {
+                observed.add(column);
+                observer.observe(column);
+            }
+        }
+        return columns.length > 0;
+    };
+    const timer = setInterval(() => {
+        if (attach()) {
+            clearInterval(timer);
+            schedule();
+        }
+    }, 500);
+    window.addEventListener("resize", schedule);
+    // Switching tabs shows a different gallery without resizing the columns.
+    document.addEventListener("click", () => setTimeout(schedule, 50), true);
+}
+
+if (typeof document !== "undefined" && typeof ResizeObserver !== "undefined" && !window.__characterBuilderGallerySyncInstalled) {
+    window.__characterBuilderGallerySyncInstalled = true;
+    characterBuilderInstallGallerySync();
+}
+
 if (typeof module !== "undefined" && module.exports) {
-    module.exports = { computeCharacterBuilderAppend };
+    module.exports = { computeCharacterBuilderAppend, computeCharacterBuilderGalleryHeight };
 }
