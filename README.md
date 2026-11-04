@@ -10,6 +10,18 @@ Forge Character Builder 是 [Forge Neo](https://github.com/Haoming02/sd-webui-fo
 
 目前版本：**1.5.2**
 
+## 畫面
+
+**Character Builder**：從圖片選擇髮型、髮色、眼睛、服裝與姿勢，右側即時組出 Final Prompt。
+
+![Character Builder](docs/images/character-builder.png)
+
+**Pose Gallery**：同一姿勢的多個視角合併為一張卡片，再以 Pose view 切換正面、俯視、仰視、側面與斜側。
+
+![Pose Gallery 多視角選擇](docs/images/pose-views.png)
+
+> 截圖中的縮圖為自製示意圖。實際使用時會顯示 CharaDB 與 Anhao 的素材（需自行下載）。
+
 ## 系統需求
 
 - Forge Neo（`sd-webui-forge-classic` 的 `neo` 分支）。
