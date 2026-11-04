@@ -10,7 +10,17 @@ Forge Character Builder 是 [Forge Neo](https://github.com/Haoming02/sd-webui-fo
 
 目前版本：**1.5.2**
 
-> 本專案原名 `ai-pose-gallery-forge`，與原始圖庫作者沒有從屬或合作關係。素材不包含在此外掛的 Git repository 中，必須由使用者自行下載並遵守各來源的使用條款。
+## 畫面
+
+**Character Builder**：從圖片選擇髮型、髮色、眼睛、服裝與姿勢，右側即時組出 Final Prompt。
+
+![Character Builder](docs/images/character-builder.png)
+
+**Pose Gallery**：同一姿勢的多個視角合併為一張卡片，再以 Pose view 切換正面、俯視、仰視、側面與斜側。
+
+![Pose Gallery 多視角選擇](docs/images/pose-views.png)
+
+> 截圖中的縮圖為自製示意圖。實際使用時會顯示 CharaDB 與 Anhao 的素材（需自行下載）。
 
 ## 系統需求
 
@@ -250,7 +260,8 @@ $env:CHARADB_ITEMS = "D:\path\to\items_public.json"
 
 ## 素材與授權
 
-- 此 repository 不重新散布 CharaDB 或 Anhao 的圖片與資料。
+- 本外掛的程式碼採用 [MIT License](LICENSE)。MIT 授權只涵蓋本 repository 的程式碼與文件，不涵蓋下列外部素材。
+- 此 repository 不重新散布 CharaDB 或 Anhao 的圖片與資料；`tests/fixtures/charadb_sample.json` 只含少量 CharaDB 的 tags 與名稱（CharaDB 允許自由使用）。
 - CharaDB 的程式、tags、名稱與圖片有不同的使用條款；圖片不可重新散布。請以 [CharaDB README](https://github.com/taki-ttt/charadb#readme) 為準。
 - ai-pose-gallery-zh 的 MIT 授權只涵蓋其程式碼，不涵蓋 `img/`、`thumbs/` 與 `data/` 內的圖片和原始資料。請以 [ai-pose-gallery-zh README](https://github.com/anhao/ai-pose-gallery-zh#readme) 為準。
 - Xinsir Canny 模型採用其模型頁所列的 Apache-2.0 授權。
