@@ -250,7 +250,8 @@ $env:CHARADB_ITEMS = "D:\path\to\items_public.json"
 
 ## 素材與授權
 
-- 此 repository 不重新散布 CharaDB 或 Anhao 的圖片與資料。
+- 本外掛的程式碼採用 [MIT License](LICENSE)。MIT 授權只涵蓋本 repository 的程式碼與文件，不涵蓋下列外部素材。
+- 此 repository 不重新散布 CharaDB 或 Anhao 的圖片與資料；`tests/fixtures/charadb_sample.json` 只含少量 CharaDB 的 tags 與名稱（CharaDB 允許自由使用）。
 - CharaDB 的程式、tags、名稱與圖片有不同的使用條款；圖片不可重新散布。請以 [CharaDB README](https://github.com/taki-ttt/charadb#readme) 為準。
 - ai-pose-gallery-zh 的 MIT 授權只涵蓋其程式碼，不涵蓋 `img/`、`thumbs/` 與 `data/` 內的圖片和原始資料。請以 [ai-pose-gallery-zh README](https://github.com/anhao/ai-pose-gallery-zh#readme) 為準。
 - Xinsir Canny 模型採用其模型頁所列的 Apache-2.0 授權。
