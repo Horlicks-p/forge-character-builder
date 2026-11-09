@@ -125,7 +125,8 @@ def build_demo(*, with_controlnet: bool = True, options: dict | None = None) -> 
     """``options`` mimics Forge settings, e.g. ``{"fcb_show_portraits": True}``."""
     if not os.environ.get("ANHAO_GALLERY_ROOT"):
         os.environ["ANHAO_GALLERY_ROOT"] = str(make_demo_dataset(Path(tempfile.mkdtemp(prefix="fcb-anhao-"))))
-    os.environ.setdefault("FCB_CUSTOM_POSE_DIR", tempfile.mkdtemp(prefix="fcb-custom-"))
+    if not os.environ.get("FCB_CUSTOM_POSE_DIR"):
+        os.environ["FCB_CUSTOM_POSE_DIR"] = tempfile.mkdtemp(prefix="fcb-custom-")
     callbacks = _install_stubs(with_controlnet, dict(options or {}))
     FakeControlNetGroup.all_ui_groups.clear()
     if str(ROOT) not in sys.path:

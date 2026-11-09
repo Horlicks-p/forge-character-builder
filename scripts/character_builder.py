@@ -140,7 +140,7 @@ def _refresh(
     page: int,
 ):
     if label == CUSTOM_LABEL:
-        return custom_pose_panel.refresh(CUSTOM_STORE, query, safe_mode, page, PAGE_SIZE)
+        return custom_pose_panel.refresh(CUSTOM_STORE, query, safe_mode, page)
     config = LIBRARIES[label]
     primary_options = _option_values(label, config["primary"], safe_mode)
     secondary_options = _option_values(label, config["secondary"], safe_mode)

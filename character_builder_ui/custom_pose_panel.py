@@ -98,7 +98,7 @@ def _caption(name: str) -> str:
     return name if len(name) <= CAPTION_LENGTH else f"{name[:CAPTION_LENGTH - 1]}…"
 
 
-def refresh(store: CustomPoseStore, query: str, safe_mode: bool, page: object, page_size: int) -> tuple:
+def refresh(store: CustomPoseStore, query: str, safe_mode: bool, page: object) -> tuple:
     """Same order as the legacy gallery outputs."""
     items = store.items(query, bool(safe_mode))
     page_items, page_number, total_pages = session._paginate(items, page)
@@ -302,13 +302,10 @@ class CustomPoseEvents:
             if result.lines_may_fade:
                 message = f"{message}. {MSG_LINES_FADE}"
         view = cleared_selection() if hidden else select(self.store, selection_ref(item.id), safe_mode)
-        return {
-            **self._closed_form(),
-            **self._selection(view),
-            self.status: message,
-            self.search: "",
-            self.page: 1,
-        }
+        updates = {**self._closed_form(), **self._selection(view), self.status: message}
+        if hidden or not result.duplicate:  # a shown duplicate is selected where the gallery already is
+            updates.update({self.search: "", self.page: 1})
+        return updates
 
     # ---------------------------------------------------------------- manage
 

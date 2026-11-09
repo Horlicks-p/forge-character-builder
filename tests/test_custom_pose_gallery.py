@@ -259,6 +259,8 @@ class FormTests(CustomGalleryTestCase):
         self.assertEqual(result[events.status], "Already in the library: same")
         self.assertEqual(len(self.store.items()), 1)
         self.assertTrue(result[events.selection_outputs[1]].startswith("Custom Poses:"))
+        self.assertNotIn(events.search, result)  # stays on the current page and search
+        self.assertNotIn(events.page, result)
 
     def test_sensitive_duplicate_under_safe_mode_stays_hidden(self):
         events = self.events()
