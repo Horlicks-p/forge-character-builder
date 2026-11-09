@@ -145,6 +145,25 @@ class SessionTests(LibraryTestCase):
         self.store.delete(item.id)
         self.assertIn(custom_poses.ERROR_NO_ITEM, session.reconcile_pose(self.ctx, selection, False)[1][0])
 
+    def test_notices_do_not_show_a_custom_pose_id(self):
+        item = self.add(sensitive=True)
+        selection = self.pose(item)
+        hidden = session.reconcile_pose(self.ctx, selection, True)[1]
+        safe_mode = session.apply_safe_mode(self.ctx, selection, True)[1]
+        source = session.change_pose_source(selection, anhao.POSE_SOURCE)[1]
+        self.store.delete(item.id)
+        deleted = session.reconcile_pose(self.ctx, selection, False)[1]
+        for notices in (hidden, safe_mode, source, deleted):
+            self.assertIn("The selected Custom Pose was cleared", notices[0])
+            self.assertNotIn(item.id, notices[0])
+
+    def test_notice_keeps_the_number_of_an_anhao_pose(self):
+        selection = BuilderSelection(pose=ItemRef(anhao.POSE_SOURCE, "12"))
+        self.assertEqual(
+            session.change_pose_source(selection, CUSTOM)[1],
+            ["Pose #12 was cleared because the pose source changed."],
+        )
+
     def test_reconcile_leaves_anhao_poses_alone(self):
         selection = BuilderSelection(pose=ItemRef(anhao.POSE_SOURCE, "1"))
         self.assertEqual(session.reconcile_pose(self.ctx, selection, True), (selection, []))

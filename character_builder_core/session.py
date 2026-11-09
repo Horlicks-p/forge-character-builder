@@ -501,12 +501,18 @@ def change_outfit_source(
     return selection.with_changes(outfit=None), notices
 
 
+def _pose_label(ref: ItemRef) -> str:
+    """How a status notice names a pose. A Custom Pose's id is an internal hash and
+    its name stays out of Markdown, so it is only described."""
+    return "The selected Custom Pose" if ref.source_id == custom_poses.SOURCE_ID else f"Pose #{ref.item_id}"
+
+
 def change_pose_source(selection: BuilderSelection, source: Optional[str]) -> tuple[BuilderSelection, list[str]]:
     """Drop a pose picked from another source. Poses emit no tags, so the prompt is untouched."""
     current = selection.pose
     if current is None or current.source_id == (source or ""):
         return selection, []
-    return selection.with_changes(pose=None), [f"Pose #{current.item_id} was cleared because the pose source changed."]
+    return selection.with_changes(pose=None), [f"{_pose_label(current)} was cleared because the pose source changed."]
 
 
 def reconcile_pose(ctx: BuilderContext, selection: BuilderSelection, safe_mode: bool) -> tuple[BuilderSelection, list[str]]:
@@ -514,7 +520,7 @@ def reconcile_pose(ctx: BuilderContext, selection: BuilderSelection, safe_mode: 
     problem = custom_pose_problem(ctx, selection.pose, safe_mode)
     if not problem:
         return selection, []
-    return selection.with_changes(pose=None), [f"Pose #{selection.pose.item_id} was cleared: {problem}."]
+    return selection.with_changes(pose=None), [f"{_pose_label(selection.pose)} was cleared: {problem}."]
 
 
 def apply_safe_mode(
@@ -541,7 +547,7 @@ def apply_safe_mode(
         selection = selection.with_changes(pose=None)
     custom = custom_pose_record(ctx, selection.pose)
     if custom is not None and custom.sensitive:
-        notices.append(f"Pose #{custom.id} was cleared because Safe mode hides it.")
+        notices.append(f"{_pose_label(selection.pose)} was cleared because Safe mode hides it.")
         selection = selection.with_changes(pose=None)
     return selection, notices
 
