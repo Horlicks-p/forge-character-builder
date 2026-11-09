@@ -333,6 +333,13 @@ def _flatten(image: Image.Image, input_kind: str) -> Image.Image:
     return Image.alpha_composite(Image.new("RGBA", image.size, background), image.convert("RGBA")).convert("RGB")
 
 
+def preview_upload(upload: object, input_kind: str) -> Image.Image:
+    """What this upload would look like once saved, without saving it."""
+    if input_kind not in INPUT_KINDS:
+        raise CustomPoseError(f"Unknown input type: {input_kind}.")
+    return _flatten(_decode_upload(_read_upload(upload))[0], input_kind)
+
+
 # --- index ----------------------------------------------------------------------
 
 
@@ -538,9 +545,9 @@ class CustomPoseStore:
                 image.load()
                 return item, _flatten(image, item.input_kind)
         except FileNotFoundError as error:
-            raise CustomPoseError(f"Missing reference image for {item.name}.") from error
+            raise CustomPoseError("Missing reference image.") from error
         except Exception as error:  # a damaged file must only fail this one send
-            raise CustomPoseError(f"The stored image for {item.name} could not be read.") from error
+            raise CustomPoseError("The stored image could not be read.") from error
 
     def preview_image(self, item_id: object, *, safe_mode: bool) -> Image.Image:
         """The picture that would be sent, for the selected-pose preview."""

@@ -10,7 +10,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable, Optional
 
-from . import anhao
+from . import anhao, custom_poses
 from .charadb_adapter import CharaDBCatalog
 
 OK = "ok"
@@ -131,6 +131,18 @@ def anhao_health(
         folders = ", ".join(f"`{name}/`" for name in missing_dirs)
         return SourceHealth("Anhao", PARTIAL, f"{detail} · missing {folders}", ANHAO_IMAGES_HINT)
     return SourceHealth("Anhao", OK, detail)
+
+
+CUSTOM_POSES_HINT = f"Set the `{custom_poses.ENV_ROOT}` environment variable to a writable folder."
+
+
+def custom_pose_health(store: custom_poses.CustomPoseStore) -> SourceHealth:
+    status = store.status()
+    if status.state == custom_poses.STATUS_OK:
+        return SourceHealth("Custom Poses", OK, f"Custom Poses: {status.count:,} saved · `{store.root}`")
+    if status.state == custom_poses.STATUS_UNAVAILABLE:
+        return SourceHealth("Custom Poses", MISSING, status.message, CUSTOM_POSES_HINT)
+    return SourceHealth("Custom Poses", ERROR, status.message)
 
 
 def render_markdown(rows: Iterable[SourceHealth]) -> str:

@@ -8,8 +8,9 @@ Requires Gradio 4.40 (Forge Neo's version). Not part of the shipped extension.
 
     python tests/harness/forge_harness.py [--port 7861]
 
-Environment: ANHAO_GALLERY_ROOT / CHARADB_ROOT as for the extension. When
-ANHAO_GALLERY_ROOT is unset, a tiny self-made dataset is generated in a temp dir.
+Environment: ANHAO_GALLERY_ROOT / CHARADB_ROOT / FCB_CUSTOM_POSE_DIR as for the
+extension. When ANHAO_GALLERY_ROOT is unset, a tiny self-made dataset is generated
+in a temp dir; FCB_CUSTOM_POSE_DIR likewise defaults to an empty temp folder.
 """
 
 from __future__ import annotations
@@ -124,6 +125,7 @@ def build_demo(*, with_controlnet: bool = True, options: dict | None = None) -> 
     """``options`` mimics Forge settings, e.g. ``{"fcb_show_portraits": True}``."""
     if not os.environ.get("ANHAO_GALLERY_ROOT"):
         os.environ["ANHAO_GALLERY_ROOT"] = str(make_demo_dataset(Path(tempfile.mkdtemp(prefix="fcb-anhao-"))))
+    os.environ.setdefault("FCB_CUSTOM_POSE_DIR", tempfile.mkdtemp(prefix="fcb-custom-"))
     callbacks = _install_stubs(with_controlnet, dict(options or {}))
     FakeControlNetGroup.all_ui_groups.clear()
     if str(ROOT) not in sys.path:

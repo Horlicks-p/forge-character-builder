@@ -65,14 +65,14 @@ class UIBuildTests(unittest.TestCase):
 
     def test_portraits_hidden_by_default(self):
         _, config = self._serve(with_controlnet=True)
-        self.assertEqual(self._choices(config, "Library"), ["Poses", "Outfits"])
+        self.assertEqual(self._choices(config, "Library"), ["Poses", "Outfits", "Custom Poses"])
         self.assertIn("anhao_outfit", self._choices(config, "Source"))
         texts = " ".join(str(c.get("props", {}).get("label")) for c in config["components"])
         self.assertIn("Data sources", texts)
 
     def test_settings_toggle_portraits_and_anhao_outfits(self):
         _, config = self._serve(with_controlnet=True, options={"fcb_show_portraits": True, "fcb_show_anhao_outfits": False})
-        self.assertEqual(self._choices(config, "Library"), ["Poses", "Outfits", "Portraits"])
+        self.assertEqual(self._choices(config, "Library"), ["Poses", "Outfits", "Portraits", "Custom Poses"])
         self.assertNotIn("anhao_outfit", self._choices(config, "Source"))
 
     def test_stale_selection_handlers_are_wired(self):

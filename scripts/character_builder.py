@@ -16,10 +16,12 @@ except ImportError:  # pragma: no cover - only outside Forge
 
 # Forge Neo adds the extension root to sys.path, so the shared core package
 # (kept outside scripts/ so Forge does not load it as a script) imports directly.
-from character_builder_core import anhao, charadb_adapter, session, sources
+from character_builder_core import anhao, charadb_adapter, custom_poses, session, sources
 # The Builder's thumbnail-click bridge is reused so the legacy gallery can
 # re-pick the same slot after a library switch, paging or a cleared selection.
 from character_builder_ui.builder_tab import _parse_pick, _pick_box, build_builder_tab
+from character_builder_ui import custom_pose_panel
+from character_builder_ui.custom_pose_panel import CUSTOM_LABEL
 
 
 EXTENSION_ROOT = Path(__file__).resolve().parent.parent
@@ -36,6 +38,14 @@ _item_title = anhao.item_title
 _prompt_for = anhao.prompt_for
 _caption = anhao.caption
 
+
+def _forge_data_path() -> str:
+    from modules import paths_internal
+
+    return paths_internal.data_path
+
+
+CUSTOM_STORE = custom_poses.open_store(data_path=_forge_data_path)
 
 OPTIONS_SECTION = ("forge_character_builder", "Forge Character Builder")
 OPT_SHOW_PORTRAITS = "fcb_show_portraits"
@@ -129,6 +139,8 @@ def _refresh(
     use_depth: bool,
     page: int,
 ):
+    if label == CUSTOM_LABEL:
+        return custom_pose_panel.refresh(CUSTOM_STORE, query, safe_mode, page, PAGE_SIZE)
     config = LIBRARIES[label]
     primary_options = _option_values(label, config["primary"], safe_mode)
     secondary_options = _option_values(label, config["secondary"], safe_mode)
@@ -148,7 +160,7 @@ def _refresh(
         ids,
         page,
         info,
-        gr.update(choices=primary_options, value=primary_value, label=config["primary_label"]),
+        gr.update(choices=primary_options, value=primary_value, label=config["primary_label"], visible=True),
         gr.update(
             choices=secondary_options,
             value=secondary_value,
@@ -256,12 +268,22 @@ def _select_item(label: str, use_depth: bool, item_ids: list[str], index: int | 
     return image, ref, _prompt_for(label, item), details, _legacy_angle_update(ref)
 
 
-def _pick_item(pick: str, label: str, use_depth: bool, item_ids: list[str]):
+def _pick_item(pick: str, label: str, use_depth: bool, item_ids: list[str], safe_mode: bool = True):
     """Selection from the hidden pick box written by the JS click bridge."""
-    return _select_item(label, use_depth, item_ids, _parse_pick(pick))
+    index = _parse_pick(pick)
+    value = item_ids[index] if item_ids and index is not None and 0 <= index < len(item_ids) else None
+    if value is not None:
+        custom = custom_pose_panel.custom_id(value) is not None
+        if custom != (label == CUSTOM_LABEL):  # the gallery is still redrawing for another library
+            return gr.update(), gr.update(), gr.update(), gr.update(), gr.update()
+        if custom:
+            return custom_pose_panel.select(CUSTOM_STORE, value, safe_mode)
+    return _select_item(label, use_depth, item_ids, index)
 
 
 def _random_item(label, query, primary, secondary, safe_mode, use_depth):
+    if label == CUSTOM_LABEL:
+        return _clear_legacy_selection()
     items = _filtered_items(label, query, primary, secondary, safe_mode)
     if label == "Poses":
         items = anhao.pose_group_representatives(items)
@@ -300,6 +322,13 @@ def _controlnet_source(ref: str, use_depth: bool, safe_mode: bool) -> tuple[Path
 
 
 def _image_for_controlnet(ref: str, use_depth: bool, safe_mode: bool = True):
+    custom_id = custom_pose_panel.custom_id(ref)
+    if custom_id is not None:
+        try:
+            control = CUSTOM_STORE.load_control_image(custom_id, safe_mode=bool(safe_mode))
+        except custom_poses.CustomPoseError as error:
+            raise gr.Error(str(error))
+        return control.array, True, control.preprocessor
     path, module = _controlnet_source(ref, use_depth, safe_mode)
     image = ImageOps.exif_transpose(Image.open(path)).convert("RGB")
     return np.asarray(image), True, module
@@ -333,9 +362,11 @@ def _reference_count(ctx: session.BuilderContext) -> int:
 def _gallery_ui():
     libraries = _visible_libraries()
     legacy_health = sources.anhao_health(GALLERY_ROOT, libraries=libraries, candidate=GALLERY_CANDIDATE)
-    source_status = sources.render_markdown([legacy_health])
-    if GALLERY_ROOT is not None:
-        source_status += f"  \nData folder: `{GALLERY_ROOT}`"
+
+    def source_status() -> str:
+        text = sources.render_markdown([legacy_health, sources.custom_pose_health(CUSTOM_STORE)])
+        return f"{text}  \nData folder: `{GALLERY_ROOT}`" if GALLERY_ROOT is not None else text
+
     target = _find_controlnet_target()
     ctx = _builder_context()
 
@@ -360,16 +391,20 @@ def _gallery_ui():
 
             with gr.Tab("Pose Gallery"):
                 with gr.Row(elem_classes=["fcb-toolbar"]):
-                    library = gr.Radio(libraries, value="Poses", label="Library", elem_classes=["fcb-library"])
+                    library = gr.Radio([*libraries, CUSTOM_LABEL], value="Poses", label="Library", elem_classes=["fcb-library"])
                     search = gr.Textbox(label="Search", placeholder="Category, type, or ID", scale=3)
                     search_button = gr.Button("Search", variant="secondary", scale=0, min_width=90)
                     random_button = gr.Button("Random pick", variant="secondary", scale=0, min_width=110)
+                    add_button = gr.Button("Add Pose", variant="primary", scale=0, min_width=100, visible=False, elem_id="fcb_custom_add")
 
                 with gr.Row(elem_classes=["fcb-filters"]):
                     primary = gr.Dropdown(["All"], value="All", label="System")
                     secondary = gr.Dropdown(["All"], value="All", label="Category")
                     safe_mode = gr.Checkbox(value=True, label="Safe mode (hide 18+)")
                     use_depth = gr.Checkbox(value=False, label="Use depth image")
+
+                custom_status = gr.Textbox(label="Custom Poses status", interactive=False, visible=False, max_lines=2, elem_id="fcb_custom_status")
+                custom_form = custom_pose_panel.build_add_form()
 
                 page = gr.State(1)
                 item_ids = gr.State([])
@@ -417,28 +452,51 @@ def _gallery_ui():
                         send_controlnet = gr.Button("Send to txt2img + ControlNet 1", variant="primary")
                         send_img2img = gr.Button("Send to img2img", variant="secondary")
                         send_prompt = gr.Button("Append prompt to txt2img", variant="secondary")
+                        custom_manage = custom_pose_panel.build_manage_controls()
                         gr.Markdown(
                             "Depth images use the `None` preprocessor. Regular pose images preselect `canny`. Choose the ControlNet model separately.",
                             elem_classes=["fcb-help"],
                         )
 
-                gr.Markdown(source_status, elem_classes=["fcb-source-status"])
+                source_panel = gr.Markdown(source_status(), elem_classes=["fcb-source-status"])
 
                 outputs = [gallery, item_ids, page, page_info, primary, secondary, use_depth]
                 refresh_inputs = [library, search, primary, secondary, safe_mode, use_depth, page]
                 legacy_selection_outputs = [selected_image, selected_ref, prompt, selection_details, pose_view]
+                custom_events = custom_pose_panel.CustomPoseEvents(
+                    CUSTOM_STORE,
+                    custom_form,
+                    custom_manage,
+                    add_button=add_button,
+                    status=custom_status,
+                    library=library,
+                    search=search,
+                    page=page,
+                    safe_mode=safe_mode,
+                    selected_ref=selected_ref,
+                    selection_outputs=legacy_selection_outputs,
+                    refresh_fn=_refresh,
+                    refresh_inputs=refresh_inputs,
+                    refresh_outputs=outputs,
+                    non_custom_controls=[random_button, send_img2img],
+                    source_status=source_panel,
+                    source_status_fn=source_status,
+                )
 
                 interface.load(
                     fn=lambda: _refresh("Poses", "", "All", "All", True, False, 1),
                     outputs=outputs,
                     show_progress=False,
                 )
-                library.change(
-                    fn=_change_library,
-                    inputs=[library, search, safe_mode, use_depth],
-                    outputs=outputs,
-                    show_progress=False,
-                ).then(fn=_clear_legacy_selection, outputs=legacy_selection_outputs, show_progress=False)
+                interface.load(fn=source_status, outputs=[source_panel], show_progress=False)
+                custom_events.after_selection(
+                    library.change(
+                        fn=_change_library,
+                        inputs=[library, search, safe_mode, use_depth],
+                        outputs=outputs,
+                        show_progress=False,
+                    ).then(fn=_clear_legacy_selection, outputs=legacy_selection_outputs, show_progress=False)
+                )
                 search.submit(fn=_reset_page, inputs=refresh_inputs, outputs=outputs, show_progress=False)
                 search_button.click(fn=_reset_page, inputs=refresh_inputs, outputs=outputs, show_progress=False)
                 primary.change(fn=_reset_page, inputs=refresh_inputs, outputs=outputs, show_progress=False)
@@ -460,11 +518,13 @@ def _gallery_ui():
                     fn=_refresh, inputs=refresh_inputs, outputs=outputs, show_progress=False
                 )
 
-                legacy_pick.change(
-                    fn=_pick_item,
-                    inputs=[legacy_pick, library, use_depth, item_ids],
-                    outputs=legacy_selection_outputs,
-                    show_progress=False,
+                custom_events.after_selection(
+                    legacy_pick.change(
+                        fn=_pick_item,
+                        inputs=[legacy_pick, library, use_depth, item_ids, safe_mode],
+                        outputs=legacy_selection_outputs,
+                        show_progress=False,
+                    )
                 )
                 random_button.click(
                     fn=_random_item,
@@ -501,17 +561,20 @@ def _gallery_ui():
                 )
 
                 if target is not None:
-                    send_controlnet.click(
+                    controlnet_sent = send_controlnet.click(
                         fn=_image_for_controlnet,
                         inputs=[selected_ref, use_depth, safe_mode],
                         outputs=[target.image.background, target.enabled, target.module],
                         show_progress=False,
-                    ).success(
-                        # Only append the prompt after the ControlNet step succeeded.
+                    )
+                    controlnet_sent.success(
+                        # Only append the prompt after the ControlNet step succeeded. The
+                        # append helper skips the tab switch when there is nothing to add.
                         fn=None,
                         inputs=[prompt],
-                        js="(text) => { appendCharacterBuilderPrompt(text, 'txt2img'); }",
+                        js="(text) => { appendCharacterBuilderPrompt(text, 'txt2img'); characterBuilderSwitchTab('txt2img'); }",
                     )
+                    custom_events.after_send(controlnet_sent)
                 else:
                     send_controlnet.interactive = False
 
