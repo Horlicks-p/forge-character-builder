@@ -462,6 +462,14 @@ class IndexSafetyTests(StoreTestCase):
             "date": [self.valid_record(created_at="yesterday")],
             "flag": [self.valid_record(sensitive="no")],
             "name": [self.valid_record(name=" ")],
+            "long name": [self.valid_record(name="x" * 10_009)],
+            "control character": [self.valid_record(name="a\x07b")],
+            "unclean spacing": [self.valid_record(name=" a  b ")],
+            "filename with path": [self.valid_record(original_filename="C:\\Users\\me\\pose.png")],
+            "posix path": [self.valid_record(original_filename="/home/me/pose.png")],
+            "long filename": [self.valid_record(original_filename="x" * 256)],
+            "impossible date": [self.valid_record(created_at="2026-99-99T99:99:99Z")],
+            "non-ascii date": [self.valid_record(created_at="٢٠٢٦-11-09T07:00:00Z")],
             "path field": [self.valid_record(image="../outside.png")],
             "duplicate id": [self.valid_record(), self.valid_record(sha256="c" * 64)],
             "duplicate hash": [self.valid_record(), self.valid_record(id="d" * 32)],
@@ -474,6 +482,85 @@ class IndexSafetyTests(StoreTestCase):
     def test_unknown_schema_is_never_rebuilt(self):
         self.write_index([self.valid_record()], schema=99)
         self.assert_read_only()
+
+    def test_boolean_schema_version_is_not_version_one(self):
+        self.write_index([self.valid_record()], schema=True)
+        self.assert_read_only()
+
+    def test_unknown_top_level_fields_are_refused(self):
+        self.store.index_path.write_text(
+            json.dumps({"schema_version": custom_poses.SCHEMA_VERSION, "items": [], "extra": 1}), encoding="utf-8"
+        )
+        self.assert_read_only()
+
+    def test_deeply_nested_index_does_not_escape_as_an_exception(self):
+        self.store.index_path.write_text("[" * 200_000, encoding="utf-8")
+        self.assert_read_only()
+
+    def test_valid_index_is_accepted(self):
+        self.write_index([self.valid_record()])
+        self.assertEqual(self.store.status().state, STATUS_OK)
+
+    def test_awkward_filenames_can_never_lock_the_library(self):
+        for filename in ("C\x00:foo.png", "a: b.png", "x /y .png", "...", "‮.png", "  ", "con:stream.png", "x" * 900 + ".png"):
+            with self.subTest(filename):
+                self.add(original_filename=filename)
+                self.assertEqual(self.store.status().state, STATUS_OK, self.store.status().message)
+
+    def test_cleaning_is_stable(self):
+        import random
+
+        generator = random.Random(1234)
+        alphabet = "ab :\\/.\x00\x07\t\n‮　-"
+        for _ in range(4000):
+            text = "".join(generator.choice(alphabet) for _ in range(generator.randrange(14)))
+            cleaned = custom_poses._clean_filename(text)
+            self.assertEqual(custom_poses._clean_filename(cleaned), cleaned, repr(text))
+            name = custom_poses._clean_text(text, custom_poses.MAX_NAME_LENGTH)
+            self.assertEqual(custom_poses._clean_text(name, custom_poses.MAX_NAME_LENGTH), name, repr(text))
+
+    def test_nothing_invalid_is_ever_written(self):
+        item = self.add().item
+        before = self.store.index_path.read_bytes()
+        broken = custom_poses.replace(item, name="bad\x07name")
+        with self.assertRaises(CustomPoseError):
+            with custom_poses._LOCK:
+                self.store._commit([broken])
+        self.assertEqual(self.store.index_path.read_bytes(), before)
+
+    def _plant(self, link, name):
+        victim = self.base / f"victim-{name}"
+        victim.write_text("do not touch", encoding="utf-8")
+        planted = self.root / name
+        try:
+            link(victim, planted)
+        except OSError:
+            self.skipTest("this link type needs extra privileges here")
+        return victim
+
+    def test_planted_links_at_temporary_names_cannot_write_outside(self):
+        item = self.add().item
+        for link in (os.link, os.symlink):
+            for name in ("index.json.tmp", "index.json.bak.tmp"):
+                with self.subTest(link=link.__name__, name=name):
+                    victim = self._plant(link, name)
+                    self.store.update(item.id, name=f"{link.__name__}-{name}")
+                    self.store.update(item.id, name="again")
+                    self.assertEqual(victim.read_text(encoding="utf-8"), "do not touch")
+                    (self.root / name).unlink()
+
+    def test_redirected_index_makes_the_library_read_only(self):
+        outside = self.base / "outside-index.json"
+        outside.write_text(json.dumps({"schema_version": 1, "items": []}), encoding="utf-8")
+        before = outside.read_bytes()
+        try:
+            os.symlink(outside, self.store.index_path)
+        except OSError:
+            self.skipTest("symlinks need extra privileges here")
+        self.assertEqual(self.store.status().state, STATUS_READ_ONLY)
+        with self.assertRaises(CustomPoseError):
+            self.add()
+        self.assertEqual(outside.read_bytes(), before)
 
     def test_corrupt_index_is_kept_and_does_not_replace_the_backup(self):
         self.add()
@@ -538,16 +625,25 @@ class IndexSafetyTests(StoreTestCase):
         _winapi.CreateJunction(str(outside), str(self.root / "images"))
         self.addCleanup(lambda: os.path.isdir(self.root / "images") and os.rmdir(self.root / "images"))
 
+        (outside / "secret.txt").write_text("private")
+        before = sorted(p.name for p in outside.iterdir())
+
         self.assertIsNone(self.store.image_path(item.id))
+        reopened = custom_poses.open_store(environ={custom_poses.ENV_ROOT: str(self.root)})
+        self.assertEqual(reopened.status().state, STATUS_READ_ONLY)
+        self.assertIn("redirected", reopened.status().message)
+        self.assertEqual(reopened.orphans(), [])
+        self.assertEqual(reopened.items(), [])
         with self.assertRaises(CustomPoseError):
             self.store.load_control_image(item.id, safe_mode=False)
         with mock.patch.object(self.store, "_stage") as stage:
             with self.assertRaisesRegex(CustomPoseError, "redirected"):
                 self.add()
         stage.assert_not_called()
-        result = self.store.delete(item.id)
-        self.assertIn(f"images/{item.id}.png", result.orphans)
-        self.assertEqual([p.name for p in outside.iterdir()], [decoy.name])
+        for action in (self.store.delete, lambda value: self.store.update(value, name="x")):
+            with self.assertRaisesRegex(CustomPoseError, "redirected"):
+                action(item.id)
+        self.assertEqual(sorted(p.name for p in outside.iterdir()), before)
 
 
 class FailureTests(StoreTestCase):
@@ -786,6 +882,35 @@ class RootTests(unittest.TestCase):
             store.add(self.base / "x.png")
         with self.assertRaises(CustomPoseError):
             store.load_control_image("a" * 32, safe_mode=False)
+
+    def test_a_failing_data_path_provider_only_disables_custom_poses(self):
+        def broken():
+            raise RuntimeError("Forge changed")
+
+        store = custom_poses.open_store({}, broken)
+        self.assertEqual(store.status().state, STATUS_UNAVAILABLE)
+        self.assertIn("RuntimeError", store.status().message)
+
+    def test_interrupts_are_not_swallowed(self):
+        def interrupted():
+            raise KeyboardInterrupt
+
+        with self.assertRaises(KeyboardInterrupt):
+            custom_poses.open_store({}, interrupted)
+
+    def test_malformed_paths_only_disable_custom_poses(self):
+        absolute_with_nul = str(self.base / "bad\0name")
+        for label, environ, provider in (
+            ("env", {custom_poses.ENV_ROOT: absolute_with_nul}, None),
+            ("provider", {}, lambda: absolute_with_nul),
+        ):
+            with self.subTest(label):
+                self.assertEqual(custom_poses.open_store(environ, provider).status().state, STATUS_UNAVAILABLE)
+
+    def test_home_expansion_failure_only_disables_custom_poses(self):
+        with mock.patch.object(Path, "expanduser", side_effect=RuntimeError("no home")):
+            store = custom_poses.open_store({custom_poses.ENV_ROOT: "~/poses"})
+        self.assertEqual(store.status().state, STATUS_UNAVAILABLE)
 
     def test_without_a_data_path_provider_the_library_is_unavailable(self):
         self.assertEqual(custom_poses.open_store({}).status().state, STATUS_UNAVAILABLE)

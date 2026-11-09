@@ -84,8 +84,11 @@ _ALLOWED_MODES = {"1", "L", "LA", "P", "RGB", "RGBA", "CMYK"} | _GRAY16_MODES
 
 _ID = re.compile(r"[0-9a-f]{32}")
 _SHA256 = re.compile(r"[0-9a-f]{64}")
-_TIMESTAMP = re.compile(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z")
+_TIMESTAMP_FORMAT = "%Y-%m-%dT%H:%M:%SZ"
+_TIMESTAMP = re.compile(r"[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z")
 _ITEM_FIELDS = {"id", "name", "original_filename", "input_kind", "sensitive", "sha256", "created_at"}
+_INDEX_FIELDS = {"schema_version", "items"}
+_LAYOUT = ("images", "thumbs", "index.json", "index.json.bak")
 
 # Windows reports a file another handle still holds as access denied (5) or a
 # sharing violation (32). Only those are worth waiting out.
@@ -169,7 +172,7 @@ def revision() -> int:
 # --- text ---------------------------------------------------------------------
 
 
-def _clean_text(value: object, limit: int) -> str:
+def _clean_text(value: object, limit: Optional[int]) -> str:
     text = "".join(ch for ch in str(value or "") if not unicodedata.category(ch).startswith("C"))
     return " ".join(text.split())[:limit].strip()
 
@@ -180,7 +183,12 @@ def _base_name(value: object) -> str:
 
 
 def _clean_filename(value: object) -> str:
-    return _clean_text(_base_name(value), MAX_FILENAME_LENGTH)
+    # Repeat until stable: removing a character can expose a new drive prefix,
+    # and the index check relies on a clean name staying unchanged.
+    text = _clean_text(value, None)
+    while (name := _clean_text(_base_name(text), None)) != text:
+        text = name
+    return text[:MAX_FILENAME_LENGTH].strip()
 
 
 def _default_name(filename: str) -> str:
@@ -199,6 +207,25 @@ def _retry(action: Callable[[], _T]) -> _T:
                 raise
             time.sleep(delay)
     raise AssertionError("unreachable")
+
+
+def _replace_atomically(target: Path, data: bytes) -> None:
+    """Swap ``target`` for new content via a fresh, exclusively created file.
+
+    A predictable temporary name could be planted as a link, and writing
+    through it would change a file outside the library.
+    """
+    handle = tempfile.NamedTemporaryFile(dir=target.parent, prefix=f"{target.name}.", suffix=".tmp", delete=False)
+    temporary = Path(handle.name)
+    try:
+        with handle:
+            handle.write(data)
+            handle.flush()
+            os.fsync(handle.fileno())
+        _retry(lambda: os.replace(temporary, target))
+    except OSError:
+        _remove_quietly(temporary)
+        raise
 
 
 def _remove_quietly(path: Optional[Path]) -> bool:
@@ -321,10 +348,14 @@ def _parse_item(raw: object) -> CustomPose:
         raise ValueError(f"item {item_id} has an invalid hash")
     if not isinstance(created, str) or not _TIMESTAMP.fullmatch(created):
         raise ValueError(f"item {item_id} has an invalid date")
+    datetime.strptime(created, _TIMESTAMP_FORMAT)  # rejects impossible dates
     if not isinstance(raw["sensitive"], bool):
         raise ValueError(f"item {item_id} has an invalid sensitive flag")
-    if not isinstance(raw["name"], str) or not raw["name"].strip() or not isinstance(raw["original_filename"], str):
+    name, filename = raw["name"], raw["original_filename"]
+    if not isinstance(name, str) or not name or name != _clean_text(name, MAX_NAME_LENGTH):
         raise ValueError(f"item {item_id} has an invalid name")
+    if not isinstance(filename, str) or filename != _clean_filename(filename):
+        raise ValueError(f"item {item_id} has an invalid original filename")
     return CustomPose(**raw)
 
 
@@ -333,10 +364,13 @@ def _parse_index(data: bytes) -> list[CustomPose]:
         document = json.loads(data.decode("utf-8"))
         if not isinstance(document, dict) or not isinstance(document.get("items"), list):
             raise ValueError("the file is not a Custom Poses index")
-        if document.get("schema_version") != SCHEMA_VERSION:
-            raise ValueError(f"unsupported schema version {document.get('schema_version')!r}")
+        version = document.get("schema_version")
+        if isinstance(version, bool) or version != SCHEMA_VERSION:
+            raise ValueError(f"unsupported schema version {version!r}")
+        if set(document) != _INDEX_FIELDS:
+            raise ValueError("the file has unknown fields")
         items = [_parse_item(raw) for raw in document["items"]]
-    except ValueError as error:  # includes JSON and UTF-8 decoding errors
+    except (ValueError, RecursionError) as error:  # includes JSON and UTF-8 decoding errors
         raise CustomPoseError(f"The Custom Poses index is invalid, so the library is read-only: {error}.") from error
     if len({item.id for item in items}) != len(items) or len({item.sha256 for item in items}) != len(items):
         raise CustomPoseError("The Custom Poses index is invalid, so the library is read-only: duplicate IDs or hashes.")
@@ -388,7 +422,10 @@ class CustomPoseStore:
     def _located(self, relative: str) -> Optional[Path]:
         """The derived location, or ``None`` if a symlink redirects it."""
         expected = self._root().joinpath(*relative.split("/"))
-        return expected if safe_join(self._root(), relative) == expected else None
+        try:
+            return expected if safe_join(self._root(), relative) == expected else None
+        except (OSError, RuntimeError):  # e.g. a symlink loop
+            return None
 
     def image_path(self, item_id: str) -> Optional[Path]:
         return self._located(f"images/{item_id}.png")
@@ -400,6 +437,9 @@ class CustomPoseStore:
 
     def _load(self) -> list[CustomPose]:
         """Current items; the caller holds the lock. Raises if unusable."""
+        redirected = [relative for relative in _LAYOUT if self._located(relative) is None]
+        if redirected:
+            raise CustomPoseError(f"The Custom Poses library is read-only: redirected path ({', '.join(redirected)}).")
         try:
             data = _retry(self.index_path.read_bytes)
         except FileNotFoundError:
@@ -417,20 +457,13 @@ class CustomPoseStore:
         """Atomically replace the index; the caller holds the lock and has just
         run ``_load`` successfully, so the file being backed up is known good."""
         global _revision
-        temporary = self.index_path.with_name("index.json.tmp")
-        backup_temporary = self.index_path.with_name("index.json.bak.tmp")
+        data = _serialize_index(items)
+        _parse_index(data)  # never persist what the next read would refuse
         try:
-            with temporary.open("wb") as handle:
-                handle.write(_serialize_index(items))
-                handle.flush()
-                os.fsync(handle.fileno())
             if self.index_path.exists():
-                backup_temporary.write_bytes(_retry(self.index_path.read_bytes))
-                _retry(lambda: os.replace(backup_temporary, self.backup_path))
-            _retry(lambda: os.replace(temporary, self.index_path))
+                _replace_atomically(self.backup_path, _retry(self.index_path.read_bytes))
+            _replace_atomically(self.index_path, data)
         except OSError as error:
-            _remove_quietly(temporary)
-            _remove_quietly(backup_temporary)
             raise CustomPoseError(f"The Custom Poses index could not be saved ({type(error).__name__}).") from error
         _revision += 1
 
@@ -479,10 +512,13 @@ class CustomPoseStore:
             return []  # without a trustworthy index, nothing can be called an orphan
         claimed = {f"images/{item.id}.png" for item in known} | {f"thumbs/{item.id}.webp" for item in known}
         found: list[str] = []
-        for folder in ("images", "thumbs"):
-            directory = self.root / folder
-            if directory.is_dir():
-                found += [f"{folder}/{entry.name}" for entry in sorted(directory.iterdir())]
+        try:
+            for folder in ("images", "thumbs"):
+                directory = self.root / folder
+                if directory.is_dir():
+                    found += [f"{folder}/{entry.name}" for entry in sorted(directory.iterdir())]
+        except OSError:
+            return []
         return [name for name in found if name not in claimed]
 
     def _render(self, item_id: object, safe_mode: bool) -> tuple[CustomPose, Image.Image]:
@@ -526,10 +562,12 @@ class CustomPoseStore:
             (root / "images").mkdir(exist_ok=True)
             (root / "thumbs").mkdir(exist_ok=True)
             image.info.clear()  # drops EXIF, ICC and text metadata
-            image.save(image_temporary, "PNG")
+            with image_temporary.open("xb") as handle:
+                image.save(handle, "PNG")
             thumbnail = image.copy()
             thumbnail.thumbnail((THUMB_EDGE, THUMB_EDGE), Image.Resampling.LANCZOS)
-            thumbnail.save(thumb_temporary, "WEBP", quality=85)
+            with thumb_temporary.open("xb") as handle:
+                thumbnail.save(handle, "WEBP", quality=85)
             for temporary, expected in ((image_temporary, "PNG"), (thumb_temporary, "WEBP")):
                 with Image.open(temporary, formats=(expected,)) as written:
                     written.verify()
@@ -591,7 +629,7 @@ class CustomPoseStore:
             input_kind=input_kind,
             sensitive=bool(sensitive),
             sha256=digest,
-            created_at=datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+            created_at=datetime.now(timezone.utc).strftime(_TIMESTAMP_FORMAT),
         )
         self._final_paths(item.id)  # never write through a redirected folder
         staged = self._stage(item.id, canonical)
@@ -703,17 +741,17 @@ def open_store(
 ) -> CustomPoseStore:
     """Open the library. Never raises: problems become an unavailable store,
     so the rest of the extension and Forge itself keep working."""
-    root, reason = find_root(environ, data_path)
-    if root is None:
-        return CustomPoseStore(None, reason)
     try:
+        root, reason = find_root(environ, data_path)
+        if root is None:
+            return CustomPoseStore(None, reason)
         for folder in (root / "images", root / "thumbs"):
             folder.mkdir(parents=True, exist_ok=True)
         with tempfile.TemporaryFile(dir=root):
             pass
-    except OSError as error:
-        return CustomPoseStore(None, f"{root} is not writable ({type(error).__name__}).")
-    store = CustomPoseStore(root)
+        store = CustomPoseStore(root)
+    except Exception as error:  # a broken path or provider must only disable this feature
+        return CustomPoseStore(None, f"The Custom Poses folder could not be opened ({type(error).__name__}).")
     orphans = store.orphans()
     if orphans:
         logger.warning("Custom Poses: %d file(s) in %s have no index record: %s", len(orphans), root, ", ".join(orphans[:20]))
