@@ -8,7 +8,7 @@ import gradio as gr
 import numpy as np
 from PIL import Image, ImageOps
 
-from character_builder_core import anhao, session, sources
+from character_builder_core import anhao, custom_poses, session, sources
 from character_builder_core.charadb_adapter import SOURCE_ID as CHARADB_SOURCE
 from character_builder_core.models import (
     KIND_BANGS,
@@ -40,6 +40,10 @@ def _hint(text: str) -> None:
         gr.Markdown(text, elem_classes=["fcb-hint"])
 
 
+def _pose_search_placeholder(source: str) -> str:
+    return "Name or ID" if source == custom_poses.SOURCE_ID else "Category, angle, or ID"
+
+
 def _pick_box(gallery_id: str):
     # Gradio only fires Gallery.select when the selected index changes, so a
     # thumbnail could not be picked again after paging or Clear. The JS click
@@ -48,6 +52,8 @@ def _pick_box(gallery_id: str):
 
 
 def _load_control_image(path) -> np.ndarray:
+    if isinstance(path, np.ndarray):  # a Custom Pose, already prepared by its store
+        return path
     try:
         image = ImageOps.exif_transpose(Image.open(path)).convert("RGB")
     except Exception as error:  # unreadable / corrupt file
@@ -60,15 +66,21 @@ def build_builder_tab(
     controlnet_target: Optional[Any],
     *,
     show_anhao_outfits: bool = True,
+    entry_tab: Optional[Any] = None,
 ) -> tuple[Callable[[], dict], list]:
     """Build the tab inside the current Blocks context.
 
     Returns ``(load_fn, load_outputs)`` for the caller to attach to
-    ``Blocks.load`` so galleries are filled when the page opens.
+    ``Blocks.load`` so galleries are filled when the page opens. ``entry_tab``
+    is the tab holding the builder: returning to it re-checks Custom Poses,
+    since Step 3 can already be the open sub-tab.
     """
     controlnet_ok = controlnet_target is not None
     outfit_sources = ctx.outfit_source_choices(show_anhao_outfits)
     default_outfit_source = outfit_sources[0][1] if outfit_sources else ""
+    pose_sources = ctx.pose_source_choices()
+    default_pose_source = ctx.default_pose_source()
+    starts_custom = default_pose_source == custom_poses.SOURCE_ID
 
     selection = gr.State(BuilderSelection())
     last_generated = gr.State("")
@@ -76,14 +88,14 @@ def build_builder_tab(
     hair_color_ids = gr.State([])
     eye_color_ids = gr.State([])
     outfit_ids, outfit_page_no = gr.State([]), gr.State(1)
-    pose_ids, pose_page_no = gr.State([]), gr.State(1)
+    pose_state, pose_page_no = gr.State(session.PosePageState(default_pose_source)), gr.State(1)
 
     with gr.Row(elem_classes=["fcb-builder-options"]):
         safe_mode = gr.Checkbox(value=True, label="Safe mode (hide 18+)")
         include_subject = gr.Checkbox(value=False, label="Add 1girl, solo")
     health = ctx.source_health()
     with gr.Accordion("Data sources", open=not sources.all_ok(health), elem_classes=["fcb-source-status"]):
-        gr.Markdown(sources.render_markdown(health))
+        health_md = gr.Markdown(sources.render_markdown(health))
 
     with gr.Row(elem_classes=["fcb-builder"]):
         with gr.Column(scale=3, elem_classes=["fcb-builder-steps"]):
@@ -174,14 +186,17 @@ def build_builder_tab(
                         outfit_next = gr.Button("Next", min_width=90)
                     outfit_raw = gr.Textbox(label="Raw source tags (read-only)", interactive=False, lines=2)
 
-                with gr.Tab("3 · Pose"):
+                with gr.Tab("3 · Pose") as pose_tab:
                     _hint(ctx.pose_hint())
+                    pose_source = gr.Radio(
+                        pose_sources, value=default_pose_source, label="Pose source", visible=len(pose_sources) > 1, elem_id="fcb_pose_source"
+                    )
                     with gr.Row():
-                        pose_search = gr.Textbox(label="Search poses", placeholder="Category, angle, or ID", scale=2)
-                        pose_system = gr.Dropdown([session.ALL], value=session.ALL, label="System")
-                        pose_category = gr.Dropdown([session.ALL], value=session.ALL, label="Category")
+                        pose_search = gr.Textbox(label="Search poses", placeholder=_pose_search_placeholder(default_pose_source), scale=2)
+                        pose_system = gr.Dropdown([session.ALL], value=session.ALL, label="System", visible=not starts_custom)
+                        pose_category = gr.Dropdown([session.ALL], value=session.ALL, label="Category", visible=not starts_custom)
                     with gr.Row():
-                        pose_mode = gr.Radio(POSE_MODES, value="Normal", label="Control image")
+                        pose_mode = gr.Radio(POSE_MODES, value="Normal", label="Control image", visible=not starts_custom)
                         pose_clear = gr.Button("Clear pose", scale=0, min_width=110)
                     pose_gallery = gr.Gallery(
                         label="Poses",
@@ -203,6 +218,7 @@ def build_builder_tab(
         with gr.Column(scale=2, min_width=320, elem_classes=["fcb-inspector"]):
             pose_angle = gr.Radio([], value=None, label="View angle", interactive=False, visible=False)
             pose_preview = gr.Image(label="Selected pose", type="filepath", height=240, interactive=False)
+            pose_details_box = gr.Textbox(label="Pose details", interactive=False, visible=False, lines=3, elem_id="fcb_pose_details")
             appearance_box = gr.Textbox(label="Appearance", interactive=False, lines=2)
             outfit_box = gr.Textbox(label="Outfit", interactive=False, lines=2)
             final_box = gr.Textbox(
@@ -227,7 +243,8 @@ def build_builder_tab(
             status_md = gr.Markdown("", elem_id="fcb_status")
             gr.Markdown(
                 "Hair, eyes and outfit go to the prompt; only the pose goes to ControlNet. "
-                "Normal uses the `canny` preprocessor, Depth uses `None`. Choose the ControlNet model yourself.",
+                "Normal uses the `canny` preprocessor, Depth uses `None`. Custom Poses follow their saved input type. "
+                "Choose the ControlNet model yourself.",
                 elem_classes=["fcb-help"],
             )
 
@@ -244,17 +261,21 @@ def build_builder_tab(
         outfit_raw,
         pose_preview,
         pose_angle,
+        pose_details_box,
         send_pose_button,
         send_all_button,
     ]
 
     def view(sel: BuilderSelection, final: str, last: str, safe: bool, *, force: bool = False, notices=()) -> dict:
+        sel, stale = session.reconcile_pose(ctx, sel, bool(safe))
+        notices = [*stale, *notices]
         update = session.regenerate(ctx, sel, final, last, bool(safe), force=force)
         _, raw = session.outfit_summary(ctx, sel)
         _, preview = session.pose_summary(ctx, sel)
         angles = session.pose_angle_choices(ctx, sel)
         selected_angle = sel.pose.item_id if sel.pose is not None else None
         can_send = controlnet_ok and sel.pose is not None
+        details = session.pose_details(ctx, sel)
         return {
             selection: sel,
             appearance_box: update.appearance,
@@ -271,6 +292,7 @@ def build_builder_tab(
                 visible=bool(angles),
                 interactive=len(angles) > 1,
             ),
+            pose_details_box: gr.update(value=details, visible=bool(details)),
             send_pose_button: gr.update(interactive=can_send),
             send_all_button: gr.update(interactive=can_send),
         }
@@ -291,22 +313,24 @@ def build_builder_tab(
     outfit_gallery_inputs = [outfit_source, outfit_category, outfit_search, safe_mode, outfit_page_no]
     outfit_gallery_outputs = [outfit_gallery, outfit_ids, outfit_page_no, outfit_info]
 
-    def pose_gallery_update(query, system, category, safe, mode, page):
-        result = session.pose_page(ctx, query, system, category, bool(safe), mode == "Depth", page)
-        return result.images, result.ids, result.page, result.info
+    def pose_gallery_update(source, query, system, category, safe, mode, page):
+        result, state = session.pose_gallery(ctx, source, query, system, category, bool(safe), mode == "Depth", page)
+        return result.images, state, result.page, result.info
 
-    pose_gallery_inputs = [pose_search, pose_system, pose_category, safe_mode, pose_mode, pose_page_no]
-    pose_gallery_outputs = [pose_gallery, pose_ids, pose_page_no, pose_info]
+    pose_gallery_inputs = [pose_source, pose_search, pose_system, pose_category, safe_mode, pose_mode, pose_page_no]
+    pose_gallery_outputs = [pose_gallery, pose_state, pose_page_no, pose_info]
 
     def outfit_filters(source, safe, category):
         options = session.outfit_categories(ctx, source, bool(safe))
         return gr.update(choices=options, value=category if category in options else session.ALL)
 
-    def pose_filters(safe, system, category):
+    def pose_filters(source, safe, system, category):
+        if source == custom_poses.SOURCE_ID:
+            return gr.update(visible=False), gr.update(visible=False)
         systems, categories = session.pose_filter_options(ctx, bool(safe))
         return (
-            gr.update(choices=systems, value=system if system in systems else session.ALL),
-            gr.update(choices=categories, value=category if category in categories else session.ALL),
+            gr.update(choices=systems, value=system if system in systems else session.ALL, visible=True),
+            gr.update(choices=categories, value=category if category in categories else session.ALL, visible=True),
         )
 
     # ------------------------------------------------------------ Step 1 events
@@ -427,32 +451,58 @@ def build_builder_tab(
 
     # ------------------------------------------------------------ Step 3 events
 
-    def reset_pose_page(query, system, category, safe, mode):
-        return pose_gallery_update(query, system, category, safe, mode, 1)
+    def reset_pose_page(source, query, system, category, safe, mode):
+        return pose_gallery_update(source, query, system, category, safe, mode, 1)
 
     for trigger in (pose_system.change, pose_category.change, pose_search.submit):
         trigger(reset_pose_page, pose_gallery_inputs[:-1], pose_gallery_outputs, show_progress=False)
     pose_prev.click(
-        lambda q, s, c, safe, m, p: pose_gallery_update(q, s, c, safe, m, int(p or 1) - 1),
+        lambda src, q, s, c, safe, m, p: pose_gallery_update(src, q, s, c, safe, m, int(p or 1) - 1),
         pose_gallery_inputs,
         pose_gallery_outputs,
         show_progress=False,
     )
     pose_next.click(
-        lambda q, s, c, safe, m, p: pose_gallery_update(q, s, c, safe, m, int(p or 1) + 1),
+        lambda src, q, s, c, safe, m, p: pose_gallery_update(src, q, s, c, safe, m, int(p or 1) + 1),
         pose_gallery_inputs,
         pose_gallery_outputs,
         show_progress=False,
     )
 
-    def pick_pose(pick, ids, mode, sel, final, last, safe):
-        index = _parse_pick(pick)
-        if index is None or not 0 <= index < len(ids):
-            return view(sel, final, last, safe)
-        chosen = ItemRef(anhao.POSE_SOURCE, ids[index])
-        return view(sel.with_changes(pose=chosen, pose_mode="depth" if mode == "Depth" else "normal"), final, last, safe)
+    def begin_pose_source_change(source, sel, final, last, safe):
+        # Everything from the old source goes at once, so no click can land on it.
+        sel, notices = session.change_pose_source(sel, source)
+        return {
+            **view(sel, final, last, safe, notices=notices),
+            pose_gallery: [],
+            pose_state: session.PosePageState(source),
+            pose_page_no: 1,
+            pose_info: "",
+            pose_search: gr.update(value="", placeholder=_pose_search_placeholder(source)),
+            pose_mode: gr.update(visible=source != custom_poses.SOURCE_ID),
+        }
 
-    pose_pick.change(pick_pose, [pose_pick, pose_ids, pose_mode, selection, *prompt_inputs], view_outputs, show_progress=False)
+    pose_source.change(
+        begin_pose_source_change,
+        [pose_source, selection, *prompt_inputs],
+        [*view_outputs, *pose_gallery_outputs, pose_search, pose_mode],
+        show_progress=False,
+    ).then(
+        pose_filters, [pose_source, safe_mode, pose_system, pose_category], [pose_system, pose_category], show_progress=False
+    ).then(reset_pose_page, pose_gallery_inputs[:-1], pose_gallery_outputs, show_progress=False)
+
+    def pick_pose(pick, state, mode, sel, final, last, safe):
+        index = _parse_pick(pick)
+        if index is None or not 0 <= index < len(state.refs):
+            return view(sel, final, last, safe)
+        chosen = state.refs[index]
+        problem = session.custom_pose_problem(ctx, chosen, bool(safe))
+        if problem:
+            return view(sel, final, last, safe, notices=[problem])
+        depth = mode == "Depth" and chosen.source_id == anhao.POSE_SOURCE
+        return view(sel.with_changes(pose=chosen, pose_mode="depth" if depth else "normal"), final, last, safe)
+
+    pose_pick.change(pick_pose, [pose_pick, pose_state, pose_mode, selection, *prompt_inputs], view_outputs, show_progress=False)
 
     def change_pose_angle(item_id, sel, final, last, safe):
         updated = session.select_pose_angle(ctx, sel, item_id)
@@ -481,10 +531,33 @@ def build_builder_tab(
         sel, notices = session.apply_safe_mode(ctx, sel, bool(safe), prompt_edited=session.is_edited(final, last))
         return view(sel, final, last, safe, notices=notices)
 
+    def refresh_stale_pose(sel, final, last, safe):
+        """Leaves the view, including its status line, alone unless the pose is gone."""
+        cleaned, _ = session.reconcile_pose(ctx, sel, bool(safe))
+        return {selection: sel} if cleaned == sel else view(sel, final, last, safe)
+
+    def enter_builder(state, query, page, sel, final, last, safe):
+        if state.source_id != custom_poses.SOURCE_ID or state.revision == custom_poses.revision():
+            return refresh_stale_pose(sel, final, last, safe)
+        gallery = pose_gallery_update(state.source_id, query, session.ALL, session.ALL, safe, "Normal", page)
+        return {**view(sel, final, last, safe), **dict(zip(pose_gallery_outputs, gallery))}
+
+    def current_health():
+        return sources.render_markdown(ctx.source_health())
+
+    for tab in filter(None, (pose_tab, entry_tab)):
+        tab.select(
+            enter_builder,
+            [pose_state, pose_search, pose_page_no, selection, *prompt_inputs],
+            [*view_outputs, *pose_gallery_outputs],
+            show_progress=False,
+        )
+        tab.select(current_health, outputs=[health_md], show_progress=False)
+
     safe_mode.change(change_safe_mode, [safe_mode, selection, final_box, last_generated], view_outputs, show_progress=False).then(
         outfit_filters, [outfit_source, safe_mode, outfit_category], [outfit_category], show_progress=False
     ).then(reset_outfit_page, outfit_gallery_inputs[:-1], outfit_gallery_outputs, show_progress=False).then(
-        pose_filters, [safe_mode, pose_system, pose_category], [pose_system, pose_category], show_progress=False
+        pose_filters, [pose_source, safe_mode, pose_system, pose_category], [pose_system, pose_category], show_progress=False
     ).then(reset_pose_page, pose_gallery_inputs[:-1], pose_gallery_outputs, show_progress=False)
 
     # ------------------------------------------------------------ final prompt
@@ -521,11 +594,12 @@ def build_builder_tab(
                 raise gr.Error(str(error))
             return _load_control_image(path), True, module, session.STATUS_POSE_SENT
 
-        send_pose_button.click(send_pose, [selection, safe_mode], cn_outputs, show_progress=False)
+        pose_sent = send_pose_button.click(send_pose, [selection, safe_mode], cn_outputs, show_progress=False)
         # The prompt is appended only after the ControlNet step succeeded.
-        send_all_button.click(send_all, [selection, final_box, safe_mode], cn_outputs, show_progress=False).success(
-            fn=None, inputs=[final_box], outputs=[status_md], js=SEND_ALL_APPEND_JS, show_progress=False
-        )
+        all_sent = send_all_button.click(send_all, [selection, final_box, safe_mode], cn_outputs, show_progress=False)
+        all_sent.success(fn=None, inputs=[final_box], outputs=[status_md], js=SEND_ALL_APPEND_JS, show_progress=False)
+        for sent in (pose_sent, all_sent):  # a failed send may mean the pose was just deleted
+            sent.then(refresh_stale_pose, [selection, *prompt_inputs], view_outputs, show_progress=False)
 
     # ------------------------------------------------------------ initial load
 
@@ -540,6 +614,7 @@ def build_builder_tab(
         pose_system,
         pose_category,
         *pose_gallery_outputs,
+        health_md,
     ]
 
     def initial_load() -> dict:
@@ -547,8 +622,8 @@ def build_builder_tab(
         hair_colors = session.character_option_page(ctx, KIND_HAIR_COLOR)
         eye_colors = session.character_option_page(ctx, KIND_EYE_COLOR)
         outfit = session.outfit_page(ctx, default_outfit_source, session.ALL, "", True, 1)
-        pose = session.pose_page(ctx, "", session.ALL, session.ALL, True, False, 1)
-        systems, categories = session.pose_filter_options(ctx, True)
+        pose, state = session.pose_gallery(ctx, default_pose_source, "", session.ALL, session.ALL, True, False, 1)
+        system_filter, category_filter = pose_filters(default_pose_source, True, session.ALL, session.ALL)
         return {
             hair_gallery: hair.images,
             hair_ids: hair.ids,
@@ -563,12 +638,13 @@ def build_builder_tab(
             outfit_ids: outfit.ids,
             outfit_page_no: outfit.page,
             outfit_info: outfit.info,
-            pose_system: gr.update(choices=systems, value=session.ALL),
-            pose_category: gr.update(choices=categories, value=session.ALL),
+            pose_system: system_filter,
+            pose_category: category_filter,
             pose_gallery: pose.images,
-            pose_ids: pose.ids,
+            pose_state: state,
             pose_page_no: pose.page,
             pose_info: pose.info,
+            health_md: current_health(),
         }
 
     return initial_load, load_outputs
