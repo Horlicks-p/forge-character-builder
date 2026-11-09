@@ -7,8 +7,9 @@ Forge Character Builder 是 [Forge Neo](https://github.com/Haoming02/sd-webui-fo
 - 將角色 Prompt 追加到既有的 txt2img Prompt，不會刪除原本的 Prompt、LoRA 或 Negative Prompt。
 - 將姿勢圖送到 txt2img 的 ControlNet Unit 1，並自動切換到 txt2img 分頁。
 - 同一姿勢的 4–5 個視角會合併為一張卡片，再由 View angle 切換。
+- 上傳自己的姿勢圖到本機 Custom Poses 圖庫，同樣能送到 ControlNet。
 
-目前版本：**1.5.2**
+目前版本：**1.6.0**
 
 ## 畫面
 
@@ -182,7 +183,7 @@ Depth 圖已經是處理完成的控制圖，所以外掛會把 Preprocessor 設
 
 1. **Character**：用圖片卡片選擇 Hairstyle、Hair color、Eye color 與 Details。
 2. **Outfit**：從 CharaDB (Anime) 或 Anhao (Original) 選擇服裝。
-3. **Pose**：選擇姿勢，再從右側 View angle 切換實際存在的 Front、High angle、Low angle、Side 或 Three-quarter 視角。
+3. **Pose**：用 **Pose source** 選擇 Anhao 或 Custom Poses。Anhao 可再從右側 View angle 切換實際存在的 Front、High angle、Low angle、Side 或 Three-quarter 視角；Custom Poses 沒有視角與 Normal／Depth，會依儲存的 Input type 決定 Preprocessor。
 4. 在右側檢查或修改 **Final Prompt (editable)**。
 5. 使用 **Append Prompt to txt2img**、**Send Pose to ControlNet 1** 或 **Send All**。
 
@@ -192,6 +193,37 @@ Depth 圖已經是處理完成的控制圖，所以外掛會把 Preprocessor 設
 - 同一姿勢的多視角只顯示一張卡片，選取後再切換 Pose view。
 - Normal 會使用 `canny`；Depth 會使用 `None`。
 - 可單獨送往 txt2img + ControlNet 1、img2img，或只追加 Prompt。
+
+### Custom Poses
+
+把自己有權使用的姿勢圖上傳到本機圖庫，之後可在 **Pose Gallery** 與 Character Builder 的 **3 · Pose** 選用。
+
+1. 開啟 **Pose Gallery**，Library 選 **Custom Poses**，按 **Add Pose**。
+2. 選擇一張圖片，視需要填寫 Name、Prompt，選擇 Input type，再按 **Save Pose**。
+3. 選取圖片後按 **Send to txt2img + ControlNet 1**。Model 不會被更動，請自行選擇符合圖片類型的 ControlNet 模型。
+
+| Input type | Preprocessor | 適用圖片 |
+|---|---|---|
+| Pose reference (Canny) | `canny` | 一般姿勢參考圖 |
+| Preprocessed Canny map | `None` | 已經是 Canny 線稿的圖 |
+| OpenPose skeleton | `None` | OpenPose 骨架圖 |
+| Depth map | `None` | 深度圖 |
+
+- **Preprocessed Canny map 應為黑底白線**；白底黑線請先自行反相。
+- 支援 PNG、JPEG、WebP 靜態圖，單檔上限 15 MiB、最多 2500 萬像素。長邊超過 2048 px 時會等比縮小；Canny 線稿縮小後細線可能變淡，建議使用長邊 2048 px 以內的原圖。
+- **Prompt（選填）** 只在 Pose Gallery 選取時帶入 Prompt 欄位，在欄位內的修改只影響當次，要永久修改請用 **Edit details**。Character Builder 的 Final Prompt 不會帶入。
+- **Mark as sensitive 是人工標記**：外掛不會自動辨識敏感圖片，Safe mode 只隱藏你標記過的項目。
+
+#### 儲存位置與備份
+
+圖庫預設存放在 `<Forge 資料目錄>/data/forge-character-builder/custom-poses`，內含 `images/`、`thumbs/`、`index.json` 與 `index.json.bak`。`Forge 資料目錄` 預設是 Forge 主程式資料夾，使用 `--data-dir` 時則是該資料夾；其下的 `data/` 是本外掛自己建立的資料夾，不是 Forge 規定的結構。
+
+- 想換位置，請把環境變數 `FCB_CUSTOM_POSE_DIR` 設為可寫入的絕對路徑。
+- Forge 的 Git 會把此資料夾顯示為 untracked，不影響 `git pull`。圖片只留在本機，請不要把它提交到公開的 repository。
+- **備份方式是複製整個資料夾**；外掛不提供自動備份。
+- **Delete 無法復原，也不是安全抹除**：Gradio、瀏覽器或作業系統的快取可能仍保留副本。
+
+> **公開存取警告：** 使用 `--listen`、Tunnel 或 Colab 公開網址時，若沒有設定 `--gradio-auth`，任何取得網址的人都能新增、重新命名及刪除伺服器上的 Custom Poses，也可能讀取圖片。此功能不適合當作無驗證的多人共享服務。
 
 ### Settings
 
@@ -217,9 +249,19 @@ Depth 圖已經是處理完成的控制圖，所以外掛會把 Preprocessor 設
 
 展開 Data sources 查看缺少的路徑。最常見原因是 `vendor/data/pose-zh.json` 不存在，或只複製了 JSON、沒有複製 `img/` 與 `thumbs/`。
 
+### Custom Poses 顯示 unavailable 或 read-only
+
+unavailable 表示找不到可用的資料夾，請把 `FCB_CUSTOM_POSE_DIR` 設為可寫入的絕對路徑。read-only 表示 `index.json` 損壞或版本不符，外掛不會覆寫它；請依畫面訊息從 `index.json.bak` 還原。
+
 ### Prompt 會蓋掉我原本的內容嗎？
 
 不會。Append 與 Send All 都是在 txt2img Prompt 尾端追加並自動處理逗號；既有 Prompt、LoRA 與 Negative Prompt 不會被清除。
+
+## v1.6.0 重點
+
+- 新增 **Custom Poses**：上傳自己的姿勢圖並永久保存，可搜尋、重新命名、刪除，再送到 ControlNet Unit 1。
+- Character Builder 的 **3 · Pose** 可在 Anhao 與 Custom Poses 之間切換，沒有安裝 Anhao 也能使用 Custom Poses。
+- 每張 Custom Pose 可選填 Prompt，在 Pose Gallery 選取時帶入。
 
 ## v1.5.2 重點
 
@@ -264,4 +306,5 @@ $env:CHARADB_ITEMS = "D:\path\to\items_public.json"
 - 此 repository 不重新散布 CharaDB 或 Anhao 的圖片與資料；`tests/fixtures/charadb_sample.json` 只含少量 CharaDB 的 tags 與名稱（CharaDB 允許自由使用）。
 - CharaDB 的程式、tags、名稱與圖片有不同的使用條款；圖片不可重新散布。請以 [CharaDB README](https://github.com/taki-ttt/charadb#readme) 為準。
 - ai-pose-gallery-zh 的 MIT 授權只涵蓋其程式碼，不涵蓋 `img/`、`thumbs/` 與 `data/` 內的圖片和原始資料。請以 [ai-pose-gallery-zh README](https://github.com/anhao/ai-pose-gallery-zh#readme) 為準。
+- Custom Poses 只接受你手動匯入的圖片，外掛不會從網路抓圖，也不提供分享功能。網路上公開的圖片不代表可以自由使用，請自行確認每張圖片的使用條件。
 - Xinsir Canny 模型採用其模型頁所列的 Apache-2.0 授權。

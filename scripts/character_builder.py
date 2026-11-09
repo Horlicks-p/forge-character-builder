@@ -347,7 +347,7 @@ def _find_controlnet_target():
 def _builder_context() -> session.BuilderContext:
     items_file = charadb_adapter.find_items_file(EXTENSION_ROOT)
     image_root = charadb_adapter.find_image_root(EXTENSION_ROOT)
-    return session.BuilderContext(charadb=charadb_adapter.load_catalog(items_file, image_root), anhao_root=GALLERY_ROOT, anhao_candidate=GALLERY_CANDIDATE)
+    return session.BuilderContext(charadb=charadb_adapter.load_catalog(items_file, image_root), anhao_root=GALLERY_ROOT, custom_store=CUSTOM_STORE, anhao_candidate=GALLERY_CANDIDATE)
 
 
 def _reference_count(ctx: session.BuilderContext) -> int:
@@ -384,9 +384,9 @@ def _gallery_ui():
         )
 
         with gr.Tabs():
-            with gr.Tab("Character Builder"):
+            with gr.Tab("Character Builder") as builder_entry:
                 builder_load, builder_outputs = build_builder_tab(
-                    ctx, target, show_anhao_outfits=_option(OPT_SHOW_ANHAO_OUTFITS)
+                    ctx, target, show_anhao_outfits=_option(OPT_SHOW_ANHAO_OUTFITS), entry_tab=builder_entry
                 )
 
             with gr.Tab("Pose Gallery"):

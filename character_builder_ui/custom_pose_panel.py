@@ -13,15 +13,11 @@ from typing import Any, Callable, Optional
 import gradio as gr
 
 from character_builder_core import custom_poses, session
-from character_builder_core.assets import PLACEHOLDER_IMAGE
 from character_builder_core.custom_poses import CustomPoseError, CustomPoseStore
 
 CUSTOM_LABEL = "Custom Poses"
 _REF_PREFIX = f"{CUSTOM_LABEL}:"
 
-MSG_EMPTY = "No custom poses yet. Add a local image to get started."
-MSG_NO_MATCH = "No custom poses match the current search."
-MSG_ALL_HIDDEN = "No custom poses to show. Safe Mode may be hiding them."
 MSG_NOT_SELECTED = "No item selected"
 MSG_SAVED_HIDDEN = "Pose saved but hidden by Safe Mode. Disable Safe Mode to view it."
 MSG_NEEDS_FILE = "Choose an image first."
@@ -29,7 +25,6 @@ MSG_LINES_FADE = "It was reduced to fit the size limit, so thin lines may look f
 
 KIND_CHOICES = [(label, kind) for kind, label in custom_poses.INPUT_KIND_LABELS.items()]
 UPLOAD_TYPES = [".png", ".jpg", ".jpeg", ".webp"]
-CAPTION_LENGTH = 32
 
 
 def selection_ref(item_id: str) -> str:
@@ -93,32 +88,11 @@ def reconcile(store: CustomPoseStore, ref: object, safe_mode: bool) -> tuple:
     return _unchanged_selection()
 
 
-def _caption(name: str) -> str:
-    """Captions overlay the thumbnail, so long names stop short of covering it."""
-    return name if len(name) <= CAPTION_LENGTH else f"{name[:CAPTION_LENGTH - 1]}…"
-
-
 def refresh(store: CustomPoseStore, query: str, safe_mode: bool, page: object) -> tuple:
     """Same order as the legacy gallery outputs."""
-    items = store.items(query, bool(safe_mode))
-    page_items, page_number, total_pages = session._paginate(items, page)
-    gallery = []
-    for item in page_items:
-        thumbnail = store.thumbnail_path(item.id)
-        path = thumbnail if thumbnail is not None and thumbnail.is_file() else PLACEHOLDER_IMAGE
-        gallery.append((str(path), _caption(item.name)))
-    if items:
-        info = f"Page {page_number} of {total_pages} · {len(items):,} items"
-    else:
-        status = store.status()
-        if status.state != custom_poses.STATUS_OK:
-            info = status.message
-        elif (query or "").strip():
-            info = MSG_NO_MATCH
-        else:
-            info = MSG_ALL_HIDDEN if status.count else MSG_EMPTY
+    result = session.custom_pose_gallery(store, query, safe_mode, page)
     hidden = gr.update(choices=["All"], value="All", visible=False)
-    return gallery, [selection_ref(item.id) for item in page_items], page_number, info, hidden, hidden, gr.update(visible=False)
+    return result.images, [selection_ref(item_id) for item_id in result.ids], result.page, result.info, hidden, hidden, gr.update(visible=False)
 
 
 @dataclass

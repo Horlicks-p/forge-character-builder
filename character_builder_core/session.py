@@ -11,7 +11,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Iterable, Optional
 
-from . import anhao, sources
+from . import anhao, custom_poses, sources
 from .assets import PLACEHOLDER_IMAGE
 from .builder import build_character_prompt
 from .charadb_adapter import SOURCE_ID as CHARADB_SOURCE
@@ -32,6 +32,11 @@ NONE_LABEL = "None"
 STATUS_POSE_SENT = "Pose sent to ControlNet Unit 1"
 STATUS_CONTROLNET_UNAVAILABLE = "ControlNet unavailable"
 STATUS_MISSING_IMAGE = "Missing reference image"
+MSG_EMPTY = "No custom poses yet. Add a local image to get started."
+MSG_EMPTY_BUILDER = "No custom poses yet. Add one in Pose Gallery, under Custom Poses."
+MSG_NO_MATCH = "No custom poses match the current search."
+MSG_ALL_HIDDEN = "No custom poses to show. Safe Mode may be hiding them."
+CAPTION_LENGTH = 32
 EDITED_NOTICE = "Final Prompt was edited manually. Press **Reset from selection** to regenerate it."
 STALE_TAGS_NOTICE = (
     "Final Prompt was edited manually and kept as is, so it may still contain tags from the cleared outfit. "
@@ -55,6 +60,8 @@ class BuilderContext:
     placeholder: Path = PLACEHOLDER_IMAGE
     # Install attempt rejected by find_gallery_root (diagnostics only).
     anhao_candidate: Optional[Path] = None
+    # Shared with the Pose Gallery tab; absent only in tests of other sources.
+    custom_store: Optional[custom_poses.CustomPoseStore] = None
 
     @property
     def poses_available(self) -> bool:
@@ -72,8 +79,20 @@ class BuilderContext:
             choices.append((OUTFIT_SOURCE_LABELS[anhao.OUTFIT_SOURCE], anhao.OUTFIT_SOURCE))
         return choices
 
+    def pose_source_choices(self) -> list[tuple[str, str]]:
+        choices = [("Anhao", anhao.POSE_SOURCE)]
+        if self.custom_store is not None:
+            choices.append(("Custom Poses", custom_poses.SOURCE_ID))
+        return choices
+
+    def default_pose_source(self) -> str:
+        return anhao.POSE_SOURCE if self.poses_available or self.custom_store is None else custom_poses.SOURCE_ID
+
     def source_health(self) -> list[sources.SourceHealth]:
-        return [sources.charadb_health(self.charadb), sources.anhao_health(self.anhao_root, candidate=self.anhao_candidate)]
+        rows = [sources.charadb_health(self.charadb), sources.anhao_health(self.anhao_root, candidate=self.anhao_candidate)]
+        if self.custom_store is not None:
+            rows.append(sources.custom_pose_health(self.custom_store))
+        return rows
 
     def hairstyle_hint(self) -> str:
         """Empty-state text for Step 1; ``""`` when CharaDB is usable."""
@@ -94,6 +113,8 @@ class BuilderContext:
         """Empty-state text for Step 3; ``""`` when poses are installed."""
         if self.poses_available:
             return ""
+        if self.custom_store is not None and self.custom_store.status().state != custom_poses.STATUS_UNAVAILABLE:
+            return "**Anhao poses are not installed.** You can use **Custom Poses** instead. " + sources.ANHAO_HINT
         return "**No poses.** Send Pose and Send All need the Anhao dataset. " + sources.ANHAO_HINT
 
 
@@ -104,10 +125,21 @@ class GalleryPage:
     page: int
     total_pages: int
     total: int
+    message: str = ""  # replaces the page count, e.g. why the page is empty
 
     @property
     def info(self) -> str:
-        return f"Page {self.page} of {self.total_pages} · {self.total:,} items"
+        return self.message or f"Page {self.page} of {self.total_pages} · {self.total:,} items"
+
+
+@dataclass(frozen=True)
+class PosePageState:
+    """The Step 3 page on screen. ``refs`` line up with its cards, so a pick
+    never depends on which source the radio shows by then."""
+
+    source_id: str = ""
+    revision: int = -1
+    refs: tuple[ItemRef, ...] = ()
 
 
 def _paginate(items: list, page: object) -> tuple[list, int, int]:
@@ -239,6 +271,61 @@ def pose_page(
     return GalleryPage(images, [str(i.get("id", "")) for i in page_items], page, total_pages, len(items))
 
 
+def _custom_caption(name: str) -> str:
+    """Captions overlay the thumbnail, so long names stop short of covering it."""
+    return name if len(name) <= CAPTION_LENGTH else f"{name[:CAPTION_LENGTH - 1]}…"
+
+
+def _custom_empty_message(store: custom_poses.CustomPoseStore, query: str, empty_text: str) -> str:
+    status = store.status()
+    if status.state != custom_poses.STATUS_OK:
+        return status.message
+    if (query or "").strip():
+        return MSG_NO_MATCH
+    return MSG_ALL_HIDDEN if status.count else empty_text
+
+
+def custom_pose_gallery(
+    store: custom_poses.CustomPoseStore,
+    query: str,
+    safe_mode: bool,
+    page: object,
+    *,
+    placeholder: Path = PLACEHOLDER_IMAGE,
+    empty_text: str = MSG_EMPTY,
+) -> GalleryPage:
+    items = store.items(query, bool(safe_mode))
+    page_items, page, total_pages = _paginate(items, page)
+    images = []
+    for item in page_items:
+        thumb = store.thumbnail_path(item.id)
+        images.append((str(thumb if thumb is not None and thumb.is_file() else placeholder), _custom_caption(item.name)))
+    message = "" if items else _custom_empty_message(store, query, empty_text)
+    return GalleryPage(images, [item.id for item in page_items], page, total_pages, len(items), message)
+
+
+def pose_gallery(
+    ctx: BuilderContext,
+    source: str,
+    query: str,
+    primary: str,
+    secondary: str,
+    safe_mode: bool,
+    depth: bool,
+    page: object,
+) -> tuple[GalleryPage, PosePageState]:
+    """One page of either source, with the state describing exactly that page."""
+    # Read first: a change during the listing must look newer, never older.
+    revision = custom_poses.revision()
+    if source != custom_poses.SOURCE_ID:
+        result = pose_page(ctx, query, primary, secondary, safe_mode, depth, page)
+    elif ctx.custom_store is None:
+        result = GalleryPage([], [], 1, 1, 0)
+    else:
+        result = custom_pose_gallery(ctx.custom_store, query, safe_mode, page, placeholder=ctx.placeholder, empty_text=MSG_EMPTY_BUILDER)
+    return result, PosePageState(source, revision, tuple(ItemRef(source, item_id) for item_id in result.ids))
+
+
 # --- lookups / summaries ------------------------------------------------------
 
 
@@ -257,6 +344,29 @@ def pose_record(ctx: BuilderContext, ref: Optional[ItemRef]) -> Optional[dict]:
         return None
     return anhao.find_item(ctx.anhao_root, "Poses", ref.item_id)
 
+
+def custom_pose_record(ctx: BuilderContext, ref: Optional[ItemRef]) -> Optional[custom_poses.CustomPose]:
+    if ref is None or ref.source_id != custom_poses.SOURCE_ID or ctx.custom_store is None:
+        return None
+    return ctx.custom_store.get(ref.item_id)
+
+
+def custom_pose_problem(ctx: BuilderContext, ref: Optional[ItemRef], safe_mode: bool) -> str:
+    """Why a Custom Pose reference cannot be used now; ``""`` when it can, or is not one."""
+    if ref is None or ref.source_id != custom_poses.SOURCE_ID:
+        return ""
+    record = custom_pose_record(ctx, ref)
+    if record is None:
+        return custom_poses.ERROR_NO_ITEM
+    return custom_poses.ERROR_HIDDEN if safe_mode and record.sensitive else ""
+
+
+def pose_details(ctx: BuilderContext, selection: BuilderSelection) -> str:
+    """Plain text for a selected Custom Pose, which may hold a user-written name."""
+    record = custom_pose_record(ctx, selection.pose)
+    if record is None:
+        return ""
+    return f"{record.name}\nType: {record.input_label}\nPreprocessor: {record.preprocessor}"
 
 
 def pose_angle_choices(ctx: BuilderContext, selection: BuilderSelection) -> list[tuple[str, str]]:
@@ -302,11 +412,23 @@ def pose_mode_label(depth: bool) -> str:
     return "Depth (preprocessor None)" if depth else "Normal (preprocessor canny)"
 
 
+def _custom_pose_summary(ctx: BuilderContext, ref: ItemRef) -> tuple[str, Optional[str]]:
+    # Markdown, so the user-written name stays out; see pose_details().
+    record = custom_pose_record(ctx, ref)
+    if record is None:
+        return f"Pose: *unavailable* (#{ref.item_id})", None
+    thumb = ctx.custom_store.thumbnail_path(record.id)
+    preview = thumb if thumb is not None and thumb.is_file() else ctx.placeholder
+    return f"Pose: #{record.id} · {record.input_label} · preprocessor {record.preprocessor}", str(preview)
+
+
 def pose_summary(ctx: BuilderContext, selection: BuilderSelection) -> tuple[str, Optional[str]]:
     """(summary markdown, preview thumbnail path) for the selected pose."""
     record = pose_record(ctx, selection.pose)
     if selection.pose is None:
         return "Pose: *none* — select a pose to enable **Send Pose** and **Send All**.", None
+    if selection.pose.source_id == custom_poses.SOURCE_ID:
+        return _custom_pose_summary(ctx, selection.pose)
     if record is None:
         return f"Pose: *unavailable* (#{selection.pose.item_id})", None
     depth = selection.pose_mode == "depth"
@@ -379,6 +501,22 @@ def change_outfit_source(
     return selection.with_changes(outfit=None), notices
 
 
+def change_pose_source(selection: BuilderSelection, source: Optional[str]) -> tuple[BuilderSelection, list[str]]:
+    """Drop a pose picked from another source. Poses emit no tags, so the prompt is untouched."""
+    current = selection.pose
+    if current is None or current.source_id == (source or ""):
+        return selection, []
+    return selection.with_changes(pose=None), [f"Pose #{current.item_id} was cleared because the pose source changed."]
+
+
+def reconcile_pose(ctx: BuilderContext, selection: BuilderSelection, safe_mode: bool) -> tuple[BuilderSelection, list[str]]:
+    """Clear a Custom Pose that was deleted or became hidden since it was picked."""
+    problem = custom_pose_problem(ctx, selection.pose, safe_mode)
+    if not problem:
+        return selection, []
+    return selection.with_changes(pose=None), [f"Pose #{selection.pose.item_id} was cleared: {problem}."]
+
+
 def apply_safe_mode(
     ctx: BuilderContext, selection: BuilderSelection, safe_mode: bool, *, prompt_edited: bool = False
 ) -> tuple[BuilderSelection, list[str]]:
@@ -401,16 +539,37 @@ def apply_safe_mode(
     if record is not None and anhao.is_nsfw("Poses", record):
         notices.append(f"Pose #{selection.pose.item_id} was cleared because Safe mode hides it.")
         selection = selection.with_changes(pose=None)
+    custom = custom_pose_record(ctx, selection.pose)
+    if custom is not None and custom.sensitive:
+        notices.append(f"Pose #{custom.id} was cleared because Safe mode hides it.")
+        selection = selection.with_changes(pose=None)
     return selection, notices
 
 
 # --- sending ------------------------------------------------------------------
 
 
-def resolve_pose_image(ctx: BuilderContext, selection: BuilderSelection, safe_mode: bool) -> tuple[Path, str]:
-    """Image path and preprocessor for the *current* pose selection."""
+def _resolve_custom_pose(ctx: BuilderContext, ref: ItemRef, safe_mode: bool) -> tuple[object, str]:
+    if ctx.custom_store is None:
+        raise SendError(f"{STATUS_MISSING_IMAGE}: pose #{ref.item_id} is not available.")
+    try:
+        control = ctx.custom_store.load_control_image(ref.item_id, safe_mode=bool(safe_mode))
+    except custom_poses.CustomPoseError as error:
+        raise SendError(str(error)) from error
+    return control.array, control.preprocessor
+
+
+def resolve_pose_image(ctx: BuilderContext, selection: BuilderSelection, safe_mode: bool) -> tuple[object, str]:
+    """Image and preprocessor for the *current* pose selection.
+
+    The image is a ``Path`` for Anhao and an RGB array for Custom Poses: the
+    store flattens by input type and enforces Safe Mode as it reads, so both
+    tabs send the same pixels.
+    """
     if selection.pose is None:
         raise SendError("Select a pose first.")
+    if selection.pose.source_id == custom_poses.SOURCE_ID:
+        return _resolve_custom_pose(ctx, selection.pose, safe_mode)
     record = pose_record(ctx, selection.pose)
     if record is None:
         raise SendError(f"{STATUS_MISSING_IMAGE}: pose #{selection.pose.item_id} is not available.")
@@ -425,7 +584,7 @@ def resolve_pose_image(ctx: BuilderContext, selection: BuilderSelection, safe_mo
 
 def preflight_send_all(
     ctx: BuilderContext, selection: BuilderSelection, final_text: Optional[str], safe_mode: bool
-) -> tuple[Path, str]:
+) -> tuple[object, str]:
     if not (final_text or "").strip():
         raise SendError("Final Prompt is empty. Use **Send Pose** to send only the pose.")
     return resolve_pose_image(ctx, selection, safe_mode)

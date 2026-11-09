@@ -99,7 +99,7 @@ class GalleryTests(CustomGalleryTestCase):
         self.assertIn("Sitting", gallery[0][1])
         self.assertIn("2 items", info)
         self.assertEqual(self.refresh("stand")[1], [f"Custom Poses:{first.id}"])
-        self.assertEqual(self.refresh("zzz")[3], self.panel.MSG_NO_MATCH)
+        self.assertEqual(self.refresh("zzz")[3], self.script.session.MSG_NO_MATCH)
 
     def test_pagination(self):
         with mock.patch.object(self.script, "PAGE_SIZE", 2), mock.patch("character_builder_core.session.PAGE_SIZE", 2):
@@ -112,7 +112,7 @@ class GalleryTests(CustomGalleryTestCase):
 
     def test_safe_mode_filters_the_gallery(self):
         self.add(sensitive=True)
-        self.assertEqual(self.refresh(safe=True)[3], self.panel.MSG_ALL_HIDDEN)
+        self.assertEqual(self.refresh(safe=True)[3], self.script.session.MSG_ALL_HIDDEN)
         self.assertEqual(len(self.refresh(safe=False)[1]), 1)
 
     def test_missing_thumbnail_keeps_the_card_selectable(self):
@@ -130,7 +130,7 @@ class GalleryTests(CustomGalleryTestCase):
     def test_long_names_do_not_cover_the_thumbnail(self):
         self.add(name="x" * 120)
         caption = self.refresh()[0][0][1]
-        self.assertEqual(len(caption), self.panel.CAPTION_LENGTH)
+        self.assertEqual(len(caption), self.script.session.CAPTION_LENGTH)
         self.assertTrue(caption.endswith("…"))
         self.assertEqual(self.store.items()[0].name, "x" * 120)
 
