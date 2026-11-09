@@ -7,3 +7,4 @@ tests/harness/*.pyi
 
 # Local planning notes (kept out of the repo)
 Forge_Character_Builder_Design_TODO.md
+Forge_Character_Builder_Custom_Poses_Design_TODO.md
