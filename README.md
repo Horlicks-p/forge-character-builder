@@ -251,7 +251,7 @@ Depth 圖已經是處理完成的控制圖，所以外掛會把 Preprocessor 設
 
 ### Custom Poses 顯示 unavailable 或 read-only
 
-unavailable 表示找不到可用的資料夾，請把 `FCB_CUSTOM_POSE_DIR` 設為可寫入的絕對路徑。read-only 表示 `index.json` 損壞或版本不符，外掛不會覆寫它；請依畫面訊息從 `index.json.bak` 還原。
+unavailable 表示找不到可用的資料夾，請把 `FCB_CUSTOM_POSE_DIR` 設為可寫入的絕對路徑。read-only 表示 `index.json` 損壞或版本不符，或 `images/`、`thumbs/`、`index.json` 被改成連結指向別處，外掛為了安全不會寫入；請依畫面訊息處理，索引損壞時可從 `index.json.bak` 還原。
 
 ### Prompt 會蓋掉我原本的內容嗎？
 
