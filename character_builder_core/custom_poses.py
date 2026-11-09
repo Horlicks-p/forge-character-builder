@@ -40,7 +40,8 @@ logger = logging.getLogger(__name__)
 Image.init()
 
 SOURCE_ID = "custom_pose"
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
+_READABLE_SCHEMA_VERSIONS = (1, 2)  # version 1 had no prompt field
 ENV_ROOT = "FCB_CUSTOM_POSE_DIR"
 
 MAX_UPLOAD_BYTES = 15 * 1024 * 1024
@@ -48,6 +49,7 @@ MAX_DECODE_PIXELS = 25_000_000
 MAX_STORED_EDGE = 2048
 THUMB_EDGE = 320
 MAX_NAME_LENGTH = 120
+MAX_PROMPT_LENGTH = 2000
 MAX_FILENAME_LENGTH = 255
 
 KIND_REFERENCE_CANNY = "reference_canny"
@@ -86,7 +88,8 @@ _ID = re.compile(r"[0-9a-f]{32}")
 _SHA256 = re.compile(r"[0-9a-f]{64}")
 _TIMESTAMP_FORMAT = "%Y-%m-%dT%H:%M:%SZ"
 _TIMESTAMP = re.compile(r"[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z")
-_ITEM_FIELDS = {"id", "name", "original_filename", "input_kind", "sensitive", "sha256", "created_at"}
+_ITEM_FIELDS_V1 = {"id", "name", "original_filename", "input_kind", "sensitive", "sha256", "created_at"}
+_ITEM_FIELDS = _ITEM_FIELDS_V1 | {"prompt"}
 _INDEX_FIELDS = {"schema_version", "items"}
 _LAYOUT = ("images", "thumbs", "index.json", "index.json.bak")
 
@@ -115,6 +118,7 @@ class CustomPose:
     sensitive: bool
     sha256: str  # of the uploaded bytes, not the stored PNG
     created_at: str
+    prompt: str = ""
 
     @property
     def preprocessor(self) -> str:
@@ -175,6 +179,14 @@ def revision() -> int:
 def _clean_text(value: object, limit: Optional[int]) -> str:
     text = "".join(ch for ch in str(value or "") if not unicodedata.category(ch).startswith("C"))
     return " ".join(text.split())[:limit].strip()
+
+
+def _clean_prompt(value: object) -> str:
+    """Too long is an error: a silently shortened prompt would mean something else."""
+    prompt = _clean_text(value, None)
+    if len(prompt) > MAX_PROMPT_LENGTH:
+        raise CustomPoseError(f"The prompt is too long (limit: {MAX_PROMPT_LENGTH:,} characters).")
+    return prompt
 
 
 def _base_name(value: object) -> str:
@@ -343,8 +355,8 @@ def preview_upload(upload: object, input_kind: str) -> Image.Image:
 # --- index ----------------------------------------------------------------------
 
 
-def _parse_item(raw: object) -> CustomPose:
-    if not isinstance(raw, dict) or set(raw) != _ITEM_FIELDS:
+def _parse_item(raw: object, version: int = SCHEMA_VERSION) -> CustomPose:
+    if not isinstance(raw, dict) or set(raw) != (_ITEM_FIELDS_V1 if version == 1 else _ITEM_FIELDS):
         raise ValueError("an item has missing or unknown fields")
     item_id, kind, digest, created = raw["id"], raw["input_kind"], raw["sha256"], raw["created_at"]
     if not isinstance(item_id, str) or not _ID.fullmatch(item_id):
@@ -363,6 +375,9 @@ def _parse_item(raw: object) -> CustomPose:
         raise ValueError(f"item {item_id} has an invalid name")
     if not isinstance(filename, str) or filename != _clean_filename(filename):
         raise ValueError(f"item {item_id} has an invalid original filename")
+    prompt = raw.get("prompt", "")
+    if not isinstance(prompt, str) or prompt != _clean_text(prompt, MAX_PROMPT_LENGTH):
+        raise ValueError(f"item {item_id} has an invalid prompt")
     return CustomPose(**raw)
 
 
@@ -372,11 +387,11 @@ def _parse_index(data: bytes) -> list[CustomPose]:
         if not isinstance(document, dict) or not isinstance(document.get("items"), list):
             raise ValueError("the file is not a Custom Poses index")
         version = document.get("schema_version")
-        if isinstance(version, bool) or version != SCHEMA_VERSION:
+        if isinstance(version, bool) or version not in _READABLE_SCHEMA_VERSIONS:
             raise ValueError(f"unsupported schema version {version!r}")
         if set(document) != _INDEX_FIELDS:
             raise ValueError("the file has unknown fields")
-        items = [_parse_item(raw) for raw in document["items"]]
+        items = [_parse_item(raw, version) for raw in document["items"]]
     except (ValueError, RecursionError) as error:  # includes JSON and UTF-8 decoding errors
         raise CustomPoseError(f"The Custom Poses index is invalid, so the library is read-only: {error}.") from error
     if len({item.id for item in items}) != len(items) or len({item.sha256 for item in items}) != len(items):
@@ -396,6 +411,7 @@ def _serialize_index(items: list[CustomPose]) -> bytes:
                 "sensitive": item.sensitive,
                 "sha256": item.sha256,
                 "created_at": item.created_at,
+                "prompt": item.prompt,
             }
             for item in items
         ],
@@ -608,15 +624,18 @@ class CustomPoseStore:
         input_kind: str = KIND_REFERENCE_CANNY,
         sensitive: bool = False,
         original_filename: Optional[str] = None,
+        prompt: str = "",
     ) -> AddResult:
         """Validate and store one uploaded file.
 
         A file already in the library (same bytes) is not stored again; the
-        result then has ``duplicate=True`` and the existing item.
+        result then has ``duplicate=True`` and the existing item, whose details
+        are left as they were.
         """
         self._root()
         if input_kind not in INPUT_KINDS:
             raise CustomPoseError(f"Unknown input type: {input_kind}.")
+        clean_prompt = _clean_prompt(prompt)
 
         # Hashing and decoding stay outside the lock so one big upload cannot
         # stall every other session.
@@ -637,6 +656,7 @@ class CustomPoseStore:
             sensitive=bool(sensitive),
             sha256=digest,
             created_at=datetime.now(timezone.utc).strftime(_TIMESTAMP_FORMAT),
+            prompt=clean_prompt,
         )
         self._final_paths(item.id)  # never write through a redirected folder
         staged = self._stage(item.id, canonical)
@@ -665,6 +685,7 @@ class CustomPoseStore:
         name: Optional[str] = None,
         input_kind: Optional[str] = None,
         sensitive: Optional[bool] = None,
+        prompt: Optional[str] = None,
     ) -> CustomPose:
         """Change editable details; ID, files, hash and date never change."""
         self._root()
@@ -679,6 +700,8 @@ class CustomPoseStore:
             changes["input_kind"] = input_kind
         if sensitive is not None:
             changes["sensitive"] = bool(sensitive)
+        if prompt is not None:
+            changes["prompt"] = _clean_prompt(prompt)
         with _LOCK:
             items = self._load()
             position = next((i for i, item in enumerate(items) if item.id == item_id), None)

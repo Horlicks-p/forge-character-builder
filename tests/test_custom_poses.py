@@ -109,6 +109,7 @@ class StoreTestCase(unittest.TestCase):
             "sensitive": False,
             "sha256": "b" * 64,
             "created_at": "2026-11-09T07:00:00Z",
+            "prompt": "",
         }
         record.update(changes)
         return record
@@ -486,6 +487,43 @@ class IndexSafetyTests(StoreTestCase):
     def test_boolean_schema_version_is_not_version_one(self):
         self.write_index([self.valid_record()], schema=True)
         self.assert_read_only()
+
+    def version_one_record(self):
+        record = self.valid_record()
+        del record["prompt"]
+        return record
+
+    def test_version_one_index_stays_usable_with_a_blank_prompt(self):
+        self.write_index([self.version_one_record()], schema=1)
+        self.assertEqual(self.store.status().state, custom_poses.STATUS_OK)
+        self.assertEqual(self.store.items()[0].prompt, "")
+
+    def test_saving_upgrades_a_version_one_index(self):
+        self.write_index([self.version_one_record()], schema=1)
+        self.store.update("a" * 32, prompt="standing")
+        document = json.loads(self.store.index_path.read_text(encoding="utf-8"))
+        self.assertEqual(document["schema_version"], 2)
+        self.assertEqual(document["items"][0]["prompt"], "standing")
+        self.assertEqual(self.store.get("a" * 32).prompt, "standing")
+
+    def test_prompt_field_must_match_the_schema_version(self):
+        self.write_index([self.version_one_record()], schema=2)
+        self.assert_read_only()
+        self.write_index([self.valid_record()], schema=1)
+        self.assert_read_only()
+
+    def test_invalid_stored_prompts_are_refused(self):
+        for bad in (5, None, " padded ", "two\nlines", "x" * 2001):
+            with self.subTest(bad=bad):
+                self.write_index([self.valid_record(prompt=bad)])
+                self.assert_read_only()
+
+    def test_prompt_length_limit(self):
+        self.write_index([self.valid_record()])
+        self.assertEqual(len(self.store.update("a" * 32, prompt="x" * 2000).prompt), 2000)
+        with self.assertRaisesRegex(CustomPoseError, "too long"):
+            self.store.update("a" * 32, prompt="x" * 2001)
+        self.assertEqual(len(self.store.get("a" * 32).prompt), 2000)
 
     def test_unknown_top_level_fields_are_refused(self):
         self.store.index_path.write_text(

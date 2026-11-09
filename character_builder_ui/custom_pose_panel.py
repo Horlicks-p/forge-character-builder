@@ -77,7 +77,7 @@ def select(store: CustomPoseStore, ref: object, safe_mode: bool) -> tuple:
     item = store.get(item_id)
     if item is None:
         return cleared_selection(custom_poses.ERROR_NO_ITEM)
-    return image, selection_ref(item.id), "", _details(item), _no_angle()
+    return image, selection_ref(item.id), item.prompt, _details(item), _no_angle()
 
 
 def reconcile(store: CustomPoseStore, ref: object, safe_mode: bool) -> tuple:
@@ -127,6 +127,7 @@ class AddForm:
     file: Any
     preview: Any
     name: Any
+    prompt: Any
     kind: Any
     sensitive: Any
     save: Any
@@ -137,6 +138,7 @@ class AddForm:
 class ManageControls:
     group: Any
     name: Any
+    prompt: Any
     kind: Any
     sensitive: Any
     save: Any
@@ -154,6 +156,12 @@ def build_add_form() -> AddForm:
             with gr.Column(scale=3):
                 file = gr.File(label="Upload image", file_count="single", file_types=UPLOAD_TYPES, type="filepath", height=150, elem_id="fcb_custom_file")
                 name = gr.Textbox(label="Name (optional)", placeholder="Defaults to the file name", max_lines=1, elem_id="fcb_custom_name")
+                prompt = gr.Textbox(
+                    label="Prompt (optional)",
+                    placeholder="Filled into the Prompt box when this pose is selected",
+                    lines=2,
+                    elem_id="fcb_custom_prompt",
+                )
                 kind = gr.Dropdown(KIND_CHOICES, value=custom_poses.KIND_REFERENCE_CANNY, label="Input type", elem_id="fcb_custom_kind")
                 sensitive = gr.Checkbox(
                     value=False,
@@ -166,7 +174,7 @@ def build_add_form() -> AddForm:
         with gr.Row():
             save = gr.Button("Save Pose", variant="primary", elem_id="fcb_custom_save")
             cancel = gr.Button("Cancel", elem_id="fcb_custom_cancel")
-    return AddForm(group, file, preview, name, kind, sensitive, save, cancel)
+    return AddForm(group, file, preview, name, prompt, kind, sensitive, save, cancel)
 
 
 def build_manage_controls() -> ManageControls:
@@ -177,6 +185,7 @@ def build_manage_controls() -> ManageControls:
             elem_classes=["fcb-help"],
         )
         name = gr.Textbox(label="Name", max_lines=1, elem_id="fcb_custom_edit_name")
+        prompt = gr.Textbox(label="Saved prompt", lines=2, elem_id="fcb_custom_edit_prompt")
         kind = gr.Dropdown(KIND_CHOICES, value=custom_poses.KIND_REFERENCE_CANNY, label="Input type", elem_id="fcb_custom_edit_kind")
         sensitive = gr.Checkbox(value=False, label="Mark as sensitive", elem_id="fcb_custom_edit_sensitive")
         with gr.Row():
@@ -187,7 +196,7 @@ def build_manage_controls() -> ManageControls:
             with gr.Row():
                 confirm_yes = gr.Button("Delete permanently", variant="stop", elem_id="fcb_custom_confirm_yes")
                 confirm_no = gr.Button("Keep it", elem_id="fcb_custom_confirm_no")
-    return ManageControls(group, name, kind, sensitive, save, delete, confirm_group, confirm_text, confirm_yes, confirm_no, delete_target)
+    return ManageControls(group, name, prompt, kind, sensitive, save, delete, confirm_group, confirm_text, confirm_yes, confirm_no, delete_target)
 
 
 class CustomPoseEvents:
@@ -238,8 +247,9 @@ class CustomPoseEvents:
             manage.confirm_group,
             manage.confirm_text,
             manage.delete_target,
+            manage.prompt,
         ]
-        self.form_outputs = [form.group, form.file, form.preview, form.name, form.kind, form.sensitive]
+        self.form_outputs = [form.group, form.file, form.preview, form.name, form.prompt, form.kind, form.sensitive]
         self._wire(library)
 
     # ---------------------------------------------------------- shared views
@@ -247,8 +257,8 @@ class CustomPoseEvents:
     def manage_view(self, ref, safe_mode):
         item = self.store.get(custom_id(ref))
         if item is None or (safe_mode and item.sensitive):
-            return gr.update(visible=False), "", gr.update(), False, gr.update(visible=False), "", ""
-        return gr.update(visible=True), item.name, item.input_kind, item.sensitive, gr.update(visible=False), "", ""
+            return gr.update(visible=False), "", gr.update(), False, gr.update(visible=False), "", "", ""
+        return gr.update(visible=True), item.name, item.input_kind, item.sensitive, gr.update(visible=False), "", "", item.prompt
 
     def mode_update(self, label):
         custom = label == CUSTOM_LABEL
@@ -267,6 +277,7 @@ class CustomPoseEvents:
             form.file: None,
             form.preview: None,
             form.name: "",
+            form.prompt: "",
             form.kind: custom_poses.KIND_REFERENCE_CANNY,
             form.sensitive: False,
         }
@@ -284,11 +295,11 @@ class CustomPoseEvents:
         except CustomPoseError as error:
             return None, str(error)
 
-    def save_upload(self, file, name, kind, sensitive, safe_mode):
+    def save_upload(self, file, name, prompt, kind, sensitive, safe_mode):
         if not file:
             return {self.status: MSG_NEEDS_FILE}
         try:
-            result = self.store.add(file, name=name or "", input_kind=kind, sensitive=bool(sensitive))
+            result = self.store.add(file, name=name or "", input_kind=kind, sensitive=bool(sensitive), prompt=prompt or "")
         except CustomPoseError as error:
             return {self.status: str(error)}
         item = result.item
@@ -309,9 +320,9 @@ class CustomPoseEvents:
 
     # ---------------------------------------------------------------- manage
 
-    def save_details(self, ref, name, kind, sensitive, safe_mode):
+    def save_details(self, ref, name, prompt, kind, sensitive, safe_mode):
         try:
-            item = self.store.update(custom_id(ref), name=name, input_kind=kind, sensitive=bool(sensitive))
+            item = self.store.update(custom_id(ref), name=name, prompt=prompt or "", input_kind=kind, sensitive=bool(sensitive))
         except CustomPoseError as error:
             if str(error) == custom_poses.ERROR_NO_ITEM:
                 return {**self._selection(cleared_selection(str(error))), self.status: str(error)}
@@ -385,7 +396,7 @@ class CustomPoseEvents:
         self._finish(
             form.save.click(
                 self.save_upload,
-                [form.file, form.name, form.kind, form.sensitive, self.safe_mode],
+                [form.file, form.name, form.prompt, form.kind, form.sensitive, self.safe_mode],
                 [*self.form_outputs, *self.selection_outputs, self.status, self.search, self.page],
                 show_progress=False,
             )
@@ -395,7 +406,7 @@ class CustomPoseEvents:
         self._finish(
             manage.save.click(
                 self.save_details,
-                [self.selected_ref, manage.name, manage.kind, manage.sensitive, self.safe_mode],
+                [self.selected_ref, manage.name, manage.prompt, manage.kind, manage.sensitive, self.safe_mode],
                 editor_outputs,
                 show_progress=False,
             )

@@ -51,8 +51,8 @@ class CustomGalleryTestCase(unittest.TestCase):
         return self.script._refresh("Custom Poses", query, "All", "All", safe, False, page)
 
     def events(self):
-        form = [mock.sentinel.__getattr__(f"form{i}") for i in range(8)]
-        manage = [mock.sentinel.__getattr__(f"manage{i}") for i in range(11)]
+        form = [mock.sentinel.__getattr__(f"form{i}") for i in range(9)]
+        manage = [mock.sentinel.__getattr__(f"manage{i}") for i in range(12)]
         selection = [mock.sentinel.__getattr__(f"selection{i}") for i in range(5)]
         with mock.patch.object(self.panel.CustomPoseEvents, "_wire"):
             return self.panel.CustomPoseEvents(
@@ -222,7 +222,7 @@ class SendTests(CustomGalleryTestCase):
 class FormTests(CustomGalleryTestCase):
     def test_save_selects_the_new_pose_and_closes_the_form(self):
         events = self.events()
-        result = events.save_upload(png_file(self.base, "front.png"), "", "reference_canny", False, True)
+        result = events.save_upload(png_file(self.base, "front.png"), "", "", "reference_canny", False, True)
         item = self.store.items()[0]
         self.assertEqual(item.name, "front")
         self.assertEqual(result[events.selection_outputs[1]], f"Custom Poses:{item.id}")
@@ -232,20 +232,20 @@ class FormTests(CustomGalleryTestCase):
 
     def test_save_without_a_file_keeps_the_form(self):
         events = self.events()
-        self.assertEqual(events.save_upload(None, "x", "reference_canny", False, True), {events.status: self.panel.MSG_NEEDS_FILE})
+        self.assertEqual(events.save_upload(None, "x", "", "reference_canny", False, True), {events.status: self.panel.MSG_NEEDS_FILE})
 
     def test_invalid_upload_reports_and_keeps_the_form(self):
         events = self.events()
         bad = self.base / "bad.png"
         bad.write_bytes(b"nope")
-        result = events.save_upload(str(bad), "", "reference_canny", False, True)
+        result = events.save_upload(str(bad), "", "", "reference_canny", False, True)
         self.assertEqual(list(result), [events.status])
         self.assertIn("not a valid", result[events.status])
         self.assertEqual(self.store.items(), [])
 
     def test_sensitive_save_under_safe_mode_is_not_selected(self):
         events = self.events()
-        result = events.save_upload(png_file(self.base, "s.png"), "", "reference_canny", True, True)
+        result = events.save_upload(png_file(self.base, "s.png"), "", "", "reference_canny", True, True)
         self.assertEqual(result[events.status], "Pose saved but hidden by Safe Mode. Disable Safe Mode to view it.")
         self.assertEqual(result[events.selection_outputs[1]], "")
         self.assertIsNone(result[events.selection_outputs[0]])
@@ -254,8 +254,8 @@ class FormTests(CustomGalleryTestCase):
     def test_duplicate_selects_the_existing_pose(self):
         events = self.events()
         path = png_file(self.base, "same.png")
-        events.save_upload(path, "", "reference_canny", False, True)
-        result = events.save_upload(path, "other", "depth_map", False, True)
+        events.save_upload(path, "", "", "reference_canny", False, True)
+        result = events.save_upload(path, "other", "", "depth_map", False, True)
         self.assertEqual(result[events.status], "Already in the library: same")
         self.assertEqual(len(self.store.items()), 1)
         self.assertTrue(result[events.selection_outputs[1]].startswith("Custom Poses:"))
@@ -266,14 +266,14 @@ class FormTests(CustomGalleryTestCase):
         events = self.events()
         path = png_file(self.base, "same.png")
         self.store.add(path, sensitive=True)
-        result = events.save_upload(path, "", "reference_canny", False, True)
+        result = events.save_upload(path, "", "", "reference_canny", False, True)
         self.assertEqual(result[events.status], self.panel.MSG_SAVED_HIDDEN)
         self.assertEqual(result[events.selection_outputs[1]], "")
 
     def test_shrunk_canny_map_warns_about_lines(self):
         events = self.events()
         path = png_file(self.base, "wide.png", size=(3000, 100))
-        result = events.save_upload(path, "", "preprocessed_canny", False, True)
+        result = events.save_upload(path, "", "", "preprocessed_canny", False, True)
         self.assertIn("thin lines", result[events.status])
 
     def test_preview_shows_the_upload_without_saving(self):
@@ -305,11 +305,57 @@ class ManageTests(CustomGalleryTestCase):
         for other in ("", "Poses:1"):
             self.assertFalse(events.manage_view(other, False)[0]["visible"])
 
+    def test_saved_prompt_fills_the_prompt_box(self):
+        item = self.add(prompt="standing, arms at sides")
+        ref = f"Custom Poses:{item.id}"
+        self.assertEqual(self.panel.select(self.store, ref, True)[2], "standing, arms at sides")
+        self.assertEqual(self.script._pick_item("0:1", "Custom Poses", False, [ref], True)[2], "standing, arms at sides")
+        self.assertEqual(self.events().manage_view(ref, True)[-1], "standing, arms at sides")
+
+    def test_pose_without_a_prompt_leaves_the_box_blank(self):
+        item = self.add()
+        self.assertEqual(self.panel.select(self.store, f"Custom Poses:{item.id}", True)[2], "")
+
+    def test_hidden_pose_does_not_reveal_its_prompt(self):
+        item = self.add(prompt="private", sensitive=True)
+        ref = f"Custom Poses:{item.id}"
+        self.assertEqual(self.panel.select(self.store, ref, True)[2], "")
+        self.assertEqual(self.events().manage_view(ref, True)[-1], "")
+
+    def test_save_stores_the_prompt_and_edit_can_clear_it(self):
+        events = self.events()
+        result = events.save_upload(png_file(self.base, "p.png"), "", "  a,\n b ", "reference_canny", False, True)
+        self.assertEqual(result[events.selection_outputs[2]], "a, b")
+        ref = result[events.selection_outputs[1]]
+        edited = events.save_details(ref, "p", "", "reference_canny", False, True)
+        self.assertEqual(edited[events.selection_outputs[2]], "")
+        self.assertEqual(self.store.items()[0].prompt, "")
+
+    def test_too_long_prompt_is_reported_and_nothing_changes(self):
+        events = self.events()
+        too_long = "x" * 2001
+        result = events.save_upload(png_file(self.base, "p.png"), "", too_long, "reference_canny", False, True)
+        self.assertEqual(list(result), [events.status])
+        self.assertIn("too long", result[events.status])
+        self.assertEqual(self.store.items(), [])
+        item = self.add(prompt="kept")
+        edited = events.save_details(f"Custom Poses:{item.id}", "n", too_long, "reference_canny", False, True)
+        self.assertEqual(list(edited), [events.status])
+        self.assertEqual(self.store.get(item.id).prompt, "kept")
+
+    def test_duplicate_keeps_the_saved_prompt(self):
+        events = self.events()
+        path = png_file(self.base, "same.png")
+        events.save_upload(path, "", "original", "reference_canny", False, True)
+        result = events.save_upload(path, "", "ignored", "reference_canny", False, True)
+        self.assertEqual(result[events.selection_outputs[2]], "original")
+        self.assertEqual(self.store.items()[0].prompt, "original")
+
     def test_edit_updates_details_and_preprocessor(self):
         events = self.events()
         item = self.add(name="Old")
         ref = f"Custom Poses:{item.id}"
-        result = events.save_details(ref, "New", "depth_map", False, True)
+        result = events.save_details(ref, "New", "", "depth_map", False, True)
         self.assertEqual(result[events.status], "Saved details: New")
         self.assertIn("Preprocessor: None", result[events.selection_outputs[3]])
         self.assertEqual(self.script._image_for_controlnet(ref, False, True)[2], "None")
@@ -317,20 +363,20 @@ class ManageTests(CustomGalleryTestCase):
     def test_marking_sensitive_under_safe_mode_clears_the_selection(self):
         events = self.events()
         item = self.add()
-        result = events.save_details(f"Custom Poses:{item.id}", "Name", "reference_canny", True, True)
+        result = events.save_details(f"Custom Poses:{item.id}", "Name", "", "reference_canny", True, True)
         self.assertEqual(result[events.selection_outputs[1]], "")
 
     def test_edit_of_a_deleted_pose_clears_the_selection(self):
         events = self.events()
         item = self.add()
         self.store.delete(item.id)
-        result = events.save_details(f"Custom Poses:{item.id}", "Name", "reference_canny", False, True)
+        result = events.save_details(f"Custom Poses:{item.id}", "Name", "", "reference_canny", False, True)
         self.assertEqual((result[events.status], result[events.selection_outputs[1]]), ("Item no longer exists", ""))
 
     def test_blank_name_is_reported(self):
         events = self.events()
         item = self.add()
-        result = events.save_details(f"Custom Poses:{item.id}", "   ", "reference_canny", False, True)
+        result = events.save_details(f"Custom Poses:{item.id}", "   ", "", "reference_canny", False, True)
         self.assertEqual(list(result), [events.status])
         self.assertEqual(self.store.get(item.id), item)
 
