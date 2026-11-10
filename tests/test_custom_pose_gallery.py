@@ -395,18 +395,40 @@ class ManageTests(CustomGalleryTestCase):
     def test_confirm_deletes_the_named_pose_and_clears_the_selection(self):
         events = self.events()
         keep, remove = self.add(), self.add()
-        result = events.confirm_delete(remove.id)
+        result = events.confirm_delete(remove.id, f"Custom Poses:{remove.id}", False)
         self.assertEqual(self.store.items(), [keep])
         self.assertEqual(result[events.selection_outputs[1]], "")
         self.assertIsNone(result[events.selection_outputs[0]])
+
+    def test_confirm_keeps_a_selection_made_while_the_dialog_was_open(self):
+        from gradio import update
+
+        events = self.events()
+        keep, remove = self.add(), self.add()
+        result = events.confirm_delete(remove.id, f"Custom Poses:{keep.id}", False)
+        self.assertEqual(self.store.items(), [keep])
+        self.assertEqual(result[events.status], f"Deleted: {remove.name}")
+        for output in events.selection_outputs:
+            self.assertEqual(result[output], update())
+
+    def test_confirm_of_a_gone_pose_keeps_another_selection(self):
+        from gradio import update
+
+        events = self.events()
+        keep, gone = self.add(), self.add()
+        self.store.delete(gone.id)
+        result = events.confirm_delete(gone.id, f"Custom Poses:{keep.id}", False)
+        self.assertEqual(result[events.status], "Item no longer exists")
+        self.assertEqual(result[events.selection_outputs[0]], update())
 
     def test_confirm_of_an_already_deleted_pose_does_not_touch_others(self):
         events = self.events()
         keep, gone = self.add(), self.add()
         self.store.delete(gone.id)
-        result = events.confirm_delete(gone.id)
+        result = events.confirm_delete(gone.id, f"Custom Poses:{gone.id}", False)
         self.assertEqual(result[events.status], "Item no longer exists")
         self.assertEqual(self.store.items(), [keep])
+        self.assertIsNone(result[events.selection_outputs[0]])
 
     def test_reconcile_clears_only_stale_custom_selections(self):
         from gradio import update

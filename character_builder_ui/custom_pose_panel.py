@@ -318,18 +318,25 @@ class CustomPoseEvents:
     def cancel_delete(self):
         return gr.update(visible=False), "", ""
 
-    def confirm_delete(self, target):
-        """Deletes the pose the dialog named, whatever is selected by now."""
+    def confirm_delete(self, target, ref=None, safe_mode=False):
+        """Deletes the pose the dialog named, whatever is selected by now.
+
+        Only that pose's selection is cleared: if the user picked another pose
+        while the dialog was open, it stays selected (unless it went stale too).
+        """
+        deleted_selected = custom_id(ref) == target
         try:
             result = self.store.delete(target)
         except CustomPoseError as error:
             if str(error) == custom_poses.ERROR_NO_ITEM:
-                return {**self._selection(cleared_selection(str(error))), self.status: str(error)}
+                view = cleared_selection(str(error)) if deleted_selected else reconcile(self.store, ref, safe_mode)
+                return {**self._selection(view), self.status: str(error)}
             return {self.status: str(error)}
         message = f"Deleted: {result.item.name}"
         if result.orphans:
             message = f"{message}. Some files were in use and remain in the library folder."
-        return {**self._selection(cleared_selection()), self.status: message}
+        view = cleared_selection() if deleted_selected else reconcile(self.store, ref, safe_mode)
+        return {**self._selection(view), self.status: message}
 
     def reconcile_selection(self, ref, safe_mode):
         return reconcile(self.store, ref, safe_mode)
@@ -392,7 +399,11 @@ class CustomPoseEvents:
             show_progress=False,
         )
         manage.confirm_no.click(self.cancel_delete, outputs=[manage.confirm_group, manage.confirm_text, manage.delete_target], show_progress=False)
-        self._finish(manage.confirm_yes.click(self.confirm_delete, [manage.delete_target], editor_outputs, show_progress=False))
+        self._finish(
+            manage.confirm_yes.click(
+                self.confirm_delete, [manage.delete_target, self.selected_ref, self.safe_mode], editor_outputs, show_progress=False
+            )
+        )
 
         self.after_selection(
             self.safe_mode.change(self.reconcile_selection, [self.selected_ref, self.safe_mode], self.selection_outputs, show_progress=False)
