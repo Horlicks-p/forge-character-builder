@@ -47,8 +47,8 @@ class SourceHealthTests(unittest.TestCase):
     def test_anhao_ok_counts(self):
         health = sources.anhao_health(self.anhao_root)
         self.assertEqual(health.state, sources.OK)
-        self.assertEqual(health.detail, "Anhao: 4 poses, 2 outfits")
-        with_portraits = sources.anhao_health(self.anhao_root, libraries=("Poses", "Outfits", "Portraits"))
+        self.assertEqual(health.detail, "Anhao: 4 poses")
+        with_portraits = sources.anhao_health(self.anhao_root, libraries=("Poses", "Portraits"))
         self.assertIn("1 portraits", with_portraits.detail)
 
     def test_anhao_missing_root(self):
@@ -57,17 +57,17 @@ class SourceHealthTests(unittest.TestCase):
         self.assertIn("ANHAO_GALLERY_ROOT", health.hint)
 
     def test_anhao_distinguishes_missing_and_broken_files(self):
-        (self.anhao_root / "data" / "costume-zh.json").unlink()
-        self.assertEqual(sources.probe_library(self.anhao_root, "Outfits").error, "`data/costume-zh.json` is missing")
+        (self.anhao_root / "data" / "portrait-zh.json").unlink()
+        self.assertEqual(sources.probe_library(self.anhao_root, "Portraits").error, "`data/portrait-zh.json` is missing")
         (self.anhao_root / "data" / "pose-zh.json").write_text("[{broken", encoding="utf-8")
         self.assertIn("could not be read", sources.probe_library(self.anhao_root, "Poses").error)
         (self.anhao_root / "data" / "portrait-zh.json").write_text('{"a": 1}', encoding="utf-8")
         self.assertIn("not a list", sources.probe_library(self.anhao_root, "Portraits").error)
 
-        health = sources.anhao_health(self.anhao_root)
+        health = sources.anhao_health(self.anhao_root, libraries=("Poses", "Portraits"))
         self.assertEqual(health.state, sources.ERROR)
         self.assertIn("Poses:", health.detail)
-        self.assertIn("Outfits:", health.detail)
+        self.assertIn("Portraits:", health.detail)
         # The cached legacy loader keeps its contract: empty, never raises.
         self.assertEqual(anhao.load_library(self.anhao_root, "Poses"), ())
 
@@ -78,14 +78,14 @@ class SourceHealthTests(unittest.TestCase):
         self.assertIn("`thumbs/`", health.detail)
 
     def test_one_empty_library_is_partial(self):
-        (self.anhao_root / "data" / "costume-zh.json").write_text("[]", encoding="utf-8")
-        self.assertEqual(sources.probe_library(self.anhao_root, "Outfits"), sources.LibraryProbe(0))
-        health = sources.anhao_health(self.anhao_root)
+        (self.anhao_root / "data" / "portrait-zh.json").write_text("[]", encoding="utf-8")
+        self.assertEqual(sources.probe_library(self.anhao_root, "Portraits"), sources.LibraryProbe(0))
+        health = sources.anhao_health(self.anhao_root, libraries=("Poses", "Portraits"))
         self.assertEqual(health.state, sources.PARTIAL)
-        self.assertEqual(health.detail, "Anhao: 4 poses, 0 outfits · empty: outfits")
+        self.assertEqual(health.detail, "Anhao: 4 poses, 0 portraits · empty: portraits")
 
     def test_all_visible_libraries_empty_is_error(self):
-        for name in ("pose-zh.json", "costume-zh.json"):
+        for name in ("pose-zh.json",):
             (self.anhao_root / "data" / name).write_text("[]", encoding="utf-8")
         health = sources.anhao_health(self.anhao_root)
         self.assertEqual(health.state, sources.ERROR)
@@ -145,16 +145,14 @@ class StepHintTests(unittest.TestCase):
 
     def test_nothing_installed(self):
         ctx = session.BuilderContext(charadb=load_catalog(None), anhao_root=None)
-        self.assertEqual(ctx.outfit_source_choices(), [])
         self.assertIn("CHARADB_ROOT", ctx.hairstyle_hint())
-        self.assertIn("No outfit source", ctx.outfit_hint())
+        self.assertIn("No outfits", ctx.outfit_hint())
+        self.assertIn("CHARADB_ROOT", ctx.outfit_hint())
         self.assertIn("ANHAO_GALLERY_ROOT", ctx.pose_hint())
 
-    def test_hidden_anhao_outfits_point_to_settings(self):
+    def test_anhao_alone_gives_no_outfits(self):
         ctx = session.BuilderContext(charadb=load_catalog(None), anhao_root=self.anhao_root)
-        self.assertEqual(ctx.outfit_hint(show_anhao=True), "")
-        self.assertEqual(ctx.outfit_source_choices(show_anhao=False), [])
-        self.assertIn("Settings → Forge Character Builder", ctx.outfit_hint(show_anhao=False))
+        self.assertIn("No outfits", ctx.outfit_hint())
 
 
 if __name__ == "__main__":

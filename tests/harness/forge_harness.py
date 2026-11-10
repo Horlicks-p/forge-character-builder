@@ -97,9 +97,9 @@ def make_demo_dataset(root: Path) -> Path:
         {"id": 2, "体系": "全身单人・性感系", "分类": "坐姿", "角度": "侧面", "原图": "img/pose/b.png", "缩略图": "thumbs/pose/b.png"},
         {"id": 3, "体系": "全身单人・标准系", "分类": "蹲姿", "角度": "俯视", "原图": "img/pose/missing.png", "缩略图": "thumbs/pose/c.png"},
     ]
-    outfits = [{"id": 10, "分类": "春季穿搭", "关键词": "white blouse pleated mini skirt", "原图": "img/costume/c.png", "缩略图": "thumbs/costume/c.png"}]
+    portraits = [{"id": 20, "分区": "正脸参考", "发长": "长发", "原图": "img/portrait/p.png", "缩略图": "thumbs/portrait/p.png"}]
     (root / "data").mkdir(parents=True, exist_ok=True)
-    for name, items in (("pose-zh.json", poses), ("costume-zh.json", outfits), ("portrait-zh.json", [])):
+    for name, items in (("pose-zh.json", poses), ("portrait-zh.json", portraits)):
         (root / "data" / name).write_text(json.dumps(items, ensure_ascii=False), encoding="utf-8")
 
     def image(relative: str, color, size=(96, 128)):
@@ -116,8 +116,8 @@ def make_demo_dataset(root: Path) -> Path:
     image("img/pose/b.png", (160, 60, 60))
     image("thumbs/pose/b.png", (160, 60, 60))
     image("thumbs/pose/c.png", (60, 140, 60))
-    image("img/costume/c.png", (200, 180, 120))
-    image("thumbs/costume/c.png", (200, 180, 120))
+    image("img/portrait/p.png", (200, 180, 120))
+    image("thumbs/portrait/p.png", (200, 180, 120))
     return root
 
 
@@ -170,7 +170,6 @@ if __name__ == "__main__":
     parser.add_argument("--port", type=int, default=7861)
     parser.add_argument("--no-controlnet", action="store_true")
     parser.add_argument("--show-portraits", action="store_true")
-    parser.add_argument("--hide-anhao-outfits", action="store_true")
     args = parser.parse_args()
-    options = {"fcb_show_portraits": args.show_portraits, "fcb_show_anhao_outfits": not args.hide_anhao_outfits}
+    options = {"fcb_show_portraits": args.show_portraits}
     build_demo(with_controlnet=not args.no_controlnet, options=options).launch(server_port=args.port)

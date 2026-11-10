@@ -78,7 +78,7 @@ def charadb_health(catalog: CharaDBCatalog) -> SourceHealth:
             return SourceHealth("CharaDB", OK, catalog.message)
         return SourceHealth("CharaDB", PARTIAL, catalog.message, CHARADB_PREVIEW_HINT)
     if catalog.path is None:
-        return SourceHealth("CharaDB", MISSING, "CharaDB not installed — hair, eye and CharaDB outfit options are unavailable.", CHARADB_HINT)
+        return SourceHealth("CharaDB", MISSING, "CharaDB not installed — hair, eye and outfit options are unavailable.", CHARADB_HINT)
     return SourceHealth("CharaDB", ERROR, catalog.message, CHARADB_HINT)
 
 
@@ -97,7 +97,7 @@ def _library_label(root: Path, label: str, count: int) -> str:
 def anhao_health(
     root: Optional[Path],
     *,
-    libraries: Iterable[str] = ("Poses", "Outfits"),
+    libraries: Iterable[str] = ("Poses",),
     candidate: Optional[Path] = None,
 ) -> SourceHealth:
     """Health of the Anhao dataset.
@@ -108,7 +108,7 @@ def anhao_health(
     """
     probe_root = root if root is not None else candidate
     if probe_root is None:
-        return SourceHealth("Anhao", MISSING, "Anhao not installed — poses and Anhao outfits are unavailable.", ANHAO_HINT)
+        return SourceHealth("Anhao", MISSING, "Anhao not installed — Anhao poses are unavailable.", ANHAO_HINT)
 
     probes = {label: probe_library(probe_root, label) for label in libraries}
     problems = [f"{label}: {probe.error}" for label, probe in probes.items() if probe.error]

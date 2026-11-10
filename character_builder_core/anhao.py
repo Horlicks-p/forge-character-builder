@@ -1,4 +1,4 @@
-"""Anhao ai-pose-gallery-zh data access (poses, outfits, legacy portraits).
+"""Anhao ai-pose-gallery-zh data access (poses and legacy portraits).
 
 Moved out of the entry script so the Legacy Pose Gallery and the Character
 Builder share one implementation. Behaviour of the legacy helpers is kept;
@@ -15,11 +15,8 @@ from pathlib import Path
 from typing import Mapping, Optional
 
 from .assets import safe_join
-from .models import KIND_OUTFIT, CatalogItem
-from .prompts import format_outfit_keywords, split_tags
 
 POSE_SOURCE = "anhao_pose"
-OUTFIT_SOURCE = "anhao_outfit"
 
 LIBRARIES = {
     "Poses": {
@@ -29,16 +26,6 @@ LIBRARIES = {
         "primary_label": "System",
         "secondary": "分类",
         "secondary_label": "Category",
-        "thumb": "缩略图",
-        "image": "原图",
-    },
-    "Outfits": {
-        "key": "costume",
-        "file": "costume-zh.json",
-        "primary": "分类",
-        "primary_label": "Category",
-        "secondary": None,
-        "secondary_label": None,
         "thumb": "缩略图",
         "image": "原图",
     },
@@ -55,7 +42,6 @@ LIBRARIES = {
 }
 
 NSFW_POSE_SYSTEMS = {"全身單人・性感系", "全身单人・性感系", "雙人纏綿", "双人缠绵"}
-NSFW_COSTUME_CATEGORIES = {"內衣・睡衣", "内衣・睡衣", "性感穿搭"}
 
 VALUE_TRANSLATIONS = {
     "上半身单人": "Single-person upper body",
@@ -93,14 +79,6 @@ VALUE_TRANSLATIONS = {
     "侧面": "Side",
     "俯视": "High angle",
     "斜侧": "Three-quarter",
-    "内衣・睡衣": "Lingerie / sleepwear",
-    "冬季穿搭": "Winter outfits",
-    "性感穿搭": "Sensual outfits",
-    "泳装・度假": "Swimwear / resort",
-    "春季穿搭": "Spring outfits",
-    "派对・礼服": "Party / formalwear",
-    "秋季穿搭": "Autumn outfits",
-    "夏季穿搭": "Summer outfits",
     "正脸参考": "Face reference",
     "造型氛围": "Styled portrait",
     "中发": "Medium hair",
@@ -220,8 +198,6 @@ def find_item(root: Optional[Path], label: str, item_id: object) -> Optional[dic
 def is_nsfw(label: str, item: dict) -> bool:
     if label == "Poses":
         return item.get("体系", "") in NSFW_POSE_SYSTEMS
-    if label == "Outfits":
-        return item.get("分类", "") in NSFW_COSTUME_CATEGORIES
     return False
 
 
@@ -232,10 +208,6 @@ def prompt_for(label: str, item: dict) -> str:
         category = english_value(item.get("分类", ""))
         system = english_value(item.get("体系", ""))
         return ", ".join(part for part in [f"{angle} view" if angle else "", category, system, "character pose reference"] if part)
-
-    if label == "Outfits":
-        english = format_outfit_keywords(item.get("关键词", ""))
-        return ", ".join(part for part in [english, "detailed outfit"] if part)
 
     section = english_value(item.get("分区", ""))
     hair_length = english_value(item.get("发长", ""))
@@ -317,12 +289,9 @@ def asset_path(root: Optional[Path], label: str, item: dict, *, thumbnail: bool,
 
 
 def item_title(label: str, item: dict) -> str:
-    item_id = str(item.get("id", "Untitled"))
     if label == "Poses":
         category = english_value(item.get("分类", "Pose"))
         return f"{category} pose"
-    if label == "Outfits":
-        return f"Outfit {item_id}"
     hair_length = english_value(item.get("发长", ""))
     return f"{hair_length or 'Portrait'} reference"
 
@@ -333,41 +302,3 @@ def caption(label: str, item: dict) -> str:
 
 def library_count(root: Optional[Path], label: str) -> int:
     return len(load_library(root, label))
-
-
-# --- Character Builder providers -------------------------------------------------
-
-
-def outfit_catalog_item(item: dict) -> CatalogItem:
-    """Anhao outfit as a builder item: conservative keyword formatting only,
-    without the legacy ", detailed outfit" suffix."""
-    item_id = str(item.get("id", ""))
-    raw = " ".join(str(item.get("关键词", "")).split())
-    tags = split_tags(format_outfit_keywords(raw))
-    shown = ", ".join(tags[:3]) + ("…" if len(tags) > 3 else "")
-    return CatalogItem(
-        source_id=OUTFIT_SOURCE,
-        item_id=item_id,
-        kind=KIND_OUTFIT,
-        category=english_value(item.get("分类", "")) or "Other",
-        display_name=f"{item_id} · {shown}" if shown else f"Outfit {item_id}",
-        raw_tags=raw,
-        normalized_tags=tuple(tags),
-        nsfw=is_nsfw("Outfits", item),
-        metadata=dict(item),
-    )
-
-
-class AnhaoOutfits:
-    """``ItemLookup`` for Anhao outfits (see builder.build_character_prompt)."""
-
-    source_id = OUTFIT_SOURCE
-
-    def __init__(self, root: Optional[Path]):
-        self.root = root
-
-    def get(self, item_id: Optional[str]) -> Optional[CatalogItem]:
-        if not item_id:
-            return None
-        item = find_item(self.root, "Outfits", item_id)
-        return outfit_catalog_item(item) if item is not None else None

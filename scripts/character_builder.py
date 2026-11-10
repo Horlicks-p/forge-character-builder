@@ -49,8 +49,7 @@ CUSTOM_STORE = custom_poses.open_store(data_path=_forge_data_path)
 
 OPTIONS_SECTION = ("forge_character_builder", "Forge Character Builder")
 OPT_SHOW_PORTRAITS = "fcb_show_portraits"
-OPT_SHOW_ANHAO_OUTFITS = "fcb_show_anhao_outfits"
-OPTION_DEFAULTS = {OPT_SHOW_PORTRAITS: False, OPT_SHOW_ANHAO_OUTFITS: True}
+OPTION_DEFAULTS = {OPT_SHOW_PORTRAITS: False}
 
 
 def _option(key: str) -> bool:
@@ -67,12 +66,6 @@ def _on_ui_settings():
     shared.opts.add_option(
         OPT_SHOW_PORTRAITS,
         shared.OptionInfo(False, "Show the Portraits library in the Pose Gallery tab", section=OPTIONS_SECTION).needs_reload_ui(),
-    )
-    shared.opts.add_option(
-        OPT_SHOW_ANHAO_OUTFITS,
-        shared.OptionInfo(
-            True, "Offer Anhao (Original) outfits as a Character Builder outfit source", section=OPTIONS_SECTION
-        ).needs_reload_ui(),
     )
 
 
@@ -385,9 +378,7 @@ def _gallery_ui():
 
         with gr.Tabs():
             with gr.Tab("Character Builder") as builder_entry:
-                builder_load, builder_outputs = build_builder_tab(
-                    ctx, target, show_anhao_outfits=_option(OPT_SHOW_ANHAO_OUTFITS), entry_tab=builder_entry
-                )
+                builder_load, builder_outputs = build_builder_tab(ctx, target, entry_tab=builder_entry)
 
             with gr.Tab("Pose Gallery"):
                 with gr.Row(elem_classes=["fcb-toolbar"]):
