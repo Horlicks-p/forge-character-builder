@@ -61,14 +61,11 @@ def build_character_prompt(
     selection: BuilderSelection,
     charadb: CharaDBCatalog,
     *,
-    outfit_sources: Optional[Mapping[str, ItemLookup]] = None,
     safe_mode: bool = True,
 ) -> PromptParts:
     """Build the appendable prompt fragment. Never raises for bad selections."""
     warnings: list[str] = []
     sources: dict[str, ItemLookup] = {charadb.source_id: charadb}
-    if outfit_sources:
-        sources.update(outfit_sources)
 
     # Hair colour: explicit Hair Color wins, then an explicit style variant.
     # The hairstyle's own sample colour (CharaDB "color") is never used.

@@ -65,15 +65,16 @@ class UIBuildTests(unittest.TestCase):
 
     def test_portraits_hidden_by_default(self):
         _, config = self._serve(with_controlnet=True)
-        self.assertEqual(self._choices(config, "Library"), ["Poses", "Outfits", "Custom Poses"])
-        self.assertIn("anhao_outfit", self._choices(config, "Source"))
+        self.assertEqual(self._choices(config, "Library"), ["Poses", "Custom Poses"])
+        # Anhao outfits were removed in 1.7.0: Step 2 has no outfit source switch.
+        with self.assertRaises(AssertionError):
+            self._choices(config, "Source")
         texts = " ".join(str(c.get("props", {}).get("label")) for c in config["components"])
         self.assertIn("Data sources", texts)
 
-    def test_settings_toggle_portraits_and_anhao_outfits(self):
-        _, config = self._serve(with_controlnet=True, options={"fcb_show_portraits": True, "fcb_show_anhao_outfits": False})
-        self.assertEqual(self._choices(config, "Library"), ["Poses", "Outfits", "Portraits", "Custom Poses"])
-        self.assertNotIn("anhao_outfit", self._choices(config, "Source"))
+    def test_settings_toggle_portraits(self):
+        _, config = self._serve(with_controlnet=True, options={"fcb_show_portraits": True})
+        self.assertEqual(self._choices(config, "Library"), ["Poses", "Portraits", "Custom Poses"])
 
     def test_stale_selection_handlers_are_wired(self):
         _, config = self._serve(with_controlnet=True)
@@ -91,8 +92,6 @@ class UIBuildTests(unittest.TestCase):
                 for dep in config["dependencies"]
             )
 
-        # Outfit source switch regenerates the selection and Final Prompt.
-        self.assertTrue(wired("Source", by_elem["fcb_final_prompt"]))
         # Normal/Depth toggle refreshes the legacy preview to what will be sent.
         self.assertTrue(wired("Use depth image", by_label["Selected reference"][0]))
         # Builder Safe mode still drives the status (where the notices appear).
@@ -114,8 +113,8 @@ class UIBuildTests(unittest.TestCase):
         self.assertEqual((depth.parent.name, depth.name, module), ("pose", "a.webp", "None"))
         self.assertIn("depth", depth.parts)
         # Non-pose libraries ignore the depth checkbox and use None.
-        outfit, module = script._controlnet_source("Outfits:10", True, True)
-        self.assertEqual((outfit.name, module), ("c.png", "None"))
+        portrait, module = script._controlnet_source("Portraits:20", True, True)
+        self.assertEqual((portrait.name, module), ("p.png", "None"))
 
         array, enabled, module = script._image_for_controlnet("Poses:1", True, True)
         self.assertEqual((array.shape, enabled, module), ((160, 120, 3), True, "None"))
@@ -171,14 +170,14 @@ class UIBuildTests(unittest.TestCase):
 
     def test_legacy_pick_selects_same_slot_again(self):
         script = self._legacy_script()
-        poses, outfits = ["1", "2"], ["10"]
+        poses, portraits = ["1", "2"], ["20"]
         first = script._pick_item("0:111", "Poses", False, poses)
         self.assertEqual(first[1], "Poses:1")
-        # After switching library, slot 0 again (new nonce) picks the outfit.
-        again = script._pick_item("0:222", "Outfits", False, outfits)
-        self.assertEqual(again[1], "Outfits:10")
+        # After switching library, slot 0 again (new nonce) picks the portrait.
+        again = script._pick_item("0:222", "Portraits", False, portraits)
+        self.assertEqual(again[1], "Portraits:20")
         for bad in ("", "5:1", "x"):
-            self.assertEqual(script._pick_item(bad, "Outfits", False, outfits)[1], "", bad)
+            self.assertEqual(script._pick_item(bad, "Portraits", False, portraits)[1], "", bad)
 
     def test_builds_without_controlnet(self):
         _, config = self._serve(with_controlnet=False)

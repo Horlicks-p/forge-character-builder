@@ -104,17 +104,6 @@ class AnhaoTests(TempDataTest):
         self.assertEqual(anhao.load_library(self.tmp / "nowhere", "Poses"), ())
         self.assertEqual(anhao.load_library(None, "Poses"), ())
 
-    def test_outfit_item_has_no_legacy_suffix(self):
-        item = anhao.AnhaoOutfits(self.anhao_root).get("10")
-        self.assertEqual(item.normalized_tags, ("white blouse", "pleated mini skirt"))
-        self.assertNotIn("detailed outfit", ", ".join(item.normalized_tags))
-        self.assertEqual(item.category, "Spring outfits")
-        self.assertTrue(anhao.AnhaoOutfits(self.anhao_root).get("11").nsfw)
-        self.assertIsNone(anhao.AnhaoOutfits(self.anhao_root).get("999"))
-
-    def test_legacy_prompt_unchanged(self):
-        item = anhao.find_item(self.anhao_root, "Outfits", 10)
-        self.assertEqual(anhao.prompt_for("Outfits", item), "white blouse, pleated mini skirt, detailed outfit")
 
 
 class GalleryTests(TempDataTest):
@@ -141,15 +130,12 @@ class GalleryTests(TempDataTest):
         self.assertEqual(eyes.ids, ["H095", "H097"])
 
     def test_outfit_pages(self):
-        charadb_page = session.outfit_page(self.ctx, "charadb", "All", "", True, 1)
+        charadb_page = session.outfit_page(self.ctx, "All", "", True, 1)
         self.assertEqual(charadb_page.ids, ["O001", "O130", "O999"])  # O231 hidden by safe mode
-        self.assertEqual(session.outfit_page(self.ctx, "charadb", "School uniform", "", True, 1).ids, ["O001"])
-        anhao_page = session.outfit_page(self.ctx, anhao.OUTFIT_SOURCE, "All", "", False, 1)
-        self.assertEqual(anhao_page.ids, ["10", "11"])
-        self.assertTrue(anhao_page.images[0][0].endswith("c.webp"))
-        self.assertEqual(anhao_page.images[1][0], str(PLACEHOLDER_IMAGE))
-        self.assertIn("Swimwear", session.outfit_categories(self.ctx, "charadb", False))
-        self.assertEqual(session.outfit_page(self.ctx, "unknown", "All", "", True, 1).ids, [])
+        self.assertEqual(session.outfit_page(self.ctx, "School uniform", "", True, 1).ids, ["O001"])
+        self.assertIn("O231", session.outfit_page(self.ctx, "All", "", False, 1).ids)
+        self.assertIn("Swimwear", session.outfit_categories(self.ctx, False))
+        self.assertNotIn("Swimwear", session.outfit_categories(self.ctx, True))
 
     def test_pose_page_and_paging_bounds(self):
         page = session.pose_page(self.ctx, "", "All", "All", True, False, 99)
@@ -157,12 +143,6 @@ class GalleryTests(TempDataTest):
         self.assertEqual(page.images[1][0], str(PLACEHOLDER_IMAGE))
         self.assertIn("Page 1 of 1", page.info)
 
-    def test_outfit_sources_listed(self):
-        self.assertEqual(
-            self.ctx.outfit_source_choices(),
-            [("CharaDB (Anime)", "charadb"), ("Anhao (Original)", anhao.OUTFIT_SOURCE)],
-        )
-        self.assertEqual(self.ctx.outfit_source_choices(show_anhao=False), [("CharaDB (Anime)", "charadb")])
 
 
 class PromptStateTests(TempDataTest):
@@ -180,24 +160,26 @@ class PromptStateTests(TempDataTest):
         forced = session.regenerate(self.ctx, sel, "black hair, my edit", "black hair", True, force=True)
         self.assertEqual((forced.final, forced.notice), ("blonde hair", ""))
 
-    def test_anhao_outfit_in_prompt(self):
-        sel = BuilderSelection(outfit=ItemRef(anhao.OUTFIT_SOURCE, "10"))
-        self.assertEqual(session.regenerate(self.ctx, sel, "", "", True).final, "white blouse, pleated mini skirt")
+    def test_outfit_from_a_removed_source_is_unavailable(self):
+        # Anhao (Original) outfits were removed in 1.7.0; such a reference is just skipped.
+        sel = BuilderSelection(outfit=ItemRef("anhao_outfit", "10"))
+        self.assertIsNone(session.outfit_item(self.ctx, sel.outfit))
+        self.assertEqual(session.regenerate(self.ctx, sel, "", "", True).final, "")
+        self.assertIn("unavailable", session.outfit_summary(self.ctx, sel)[0])
 
     def test_safe_mode_clears_hidden_selections(self):
-        for outfit in (cref("O231"), ItemRef(anhao.OUTFIT_SOURCE, "11")):
-            sel = BuilderSelection(outfit=outfit, **pose(2))
-            cleared, notices = session.apply_safe_mode(self.ctx, sel, True)
-            self.assertIsNone(cleared.outfit)
-            self.assertIsNone(cleared.pose)
-            self.assertEqual(len(notices), 2)
-            kept, notices = session.apply_safe_mode(self.ctx, sel, False)
-            self.assertEqual((kept, notices), (sel, []))
+        sel = BuilderSelection(outfit=cref("O231"), **pose(2))
+        cleared, notices = session.apply_safe_mode(self.ctx, sel, True)
+        self.assertIsNone(cleared.outfit)
+        self.assertIsNone(cleared.pose)
+        self.assertEqual(len(notices), 2)
+        kept, notices = session.apply_safe_mode(self.ctx, sel, False)
+        self.assertEqual((kept, notices), (sel, []))
 
     def test_safe_mode_warns_when_edited_prompt_may_keep_tags(self):
-        sel = BuilderSelection(outfit=ItemRef(anhao.OUTFIT_SOURCE, "11"))
+        sel = BuilderSelection(outfit=cref("O231"))
         generated = session.regenerate(self.ctx, sel, "", "", False).final
-        self.assertEqual(generated, "black camisole")
+        self.assertEqual(generated, "micro bikini, bikini, swimsuit")
         edited = generated + ", masterpiece"
 
         cleared, notices = session.apply_safe_mode(self.ctx, sel, True, prompt_edited=session.is_edited(edited, generated))
@@ -215,28 +197,6 @@ class PromptStateTests(TempDataTest):
     def test_safe_mode_pose_only_clear_has_no_stale_tag_warning(self):
         _, notices = session.apply_safe_mode(self.ctx, BuilderSelection(**pose(2)), True, prompt_edited=True)
         self.assertEqual(notices, ["Pose #2 was cleared because Safe mode hides it."])
-
-    def test_outfit_source_change_clears_other_provider_outfit(self):
-        sel = BuilderSelection(hair_color=cref("H049"), outfit=cref("O001"))
-        generated = session.regenerate(self.ctx, sel, "", "", True).final
-        self.assertIn("serafuku", generated)
-
-        cleared, notices = session.change_outfit_source(sel, anhao.OUTFIT_SOURCE)
-        self.assertIsNone(cleared.outfit)
-        self.assertEqual(cleared.hair_color, sel.hair_color)  # nothing else changes
-        self.assertEqual(notices, ["Outfit #O001 (CharaDB (Anime)) was cleared because the outfit source changed."])
-        self.assertEqual(session.regenerate(self.ctx, cleared, generated, generated, True).final, "black hair")
-
-        # Edited prompt: kept, and the user is told old tags may remain.
-        edited = generated + ", smile"
-        cleared, notices = session.change_outfit_source(sel, anhao.OUTFIT_SOURCE, prompt_edited=True)
-        self.assertIn(session.STALE_TAGS_NOTICE, notices)
-        self.assertEqual(session.regenerate(self.ctx, cleared, edited, generated, True).final, edited)
-
-    def test_outfit_source_change_keeps_same_provider_outfit(self):
-        sel = BuilderSelection(outfit=cref("O001"))
-        self.assertEqual(session.change_outfit_source(sel, "charadb"), (sel, []))
-        self.assertEqual(session.change_outfit_source(BuilderSelection(), anhao.OUTFIT_SOURCE), (BuilderSelection(), []))
 
     def test_summaries(self):
         sel = BuilderSelection(hairstyle=cref("H001-black"), outfit=cref("O130"), **pose(1, "depth"))

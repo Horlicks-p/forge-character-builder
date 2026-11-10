@@ -4,7 +4,7 @@ from pathlib import Path
 from character_builder_core.builder import build_character_prompt
 from character_builder_core.charadb_adapter import load_catalog
 from character_builder_core.models import BuilderSelection, ItemRef
-from character_builder_core.prompts import dedupe_tags, format_outfit_keywords, join_tags, merge_tags, split_tags
+from character_builder_core.prompts import dedupe_tags, join_tags, merge_tags, split_tags
 
 FIXTURE = Path(__file__).parent / "fixtures" / "charadb_sample.json"
 
@@ -36,17 +36,6 @@ class TagHelperTests(unittest.TestCase):
 
     def test_merge_skips_empty_groups(self):
         self.assertEqual(merge_tags("black hair", None, "", "long hair, black hair"), ["black hair", "long hair"])
-
-    def test_format_outfit_keywords_keeps_garment_phrases(self):
-        self.assertEqual(format_outfit_keywords("white sneakers"), "white sneakers")
-        self.assertEqual(
-            format_outfit_keywords("pleated mini skirt white sneakers"),
-            "pleated mini skirt, white sneakers",
-        )
-
-    def test_format_outfit_keywords_respects_existing_commas(self):
-        self.assertEqual(format_outfit_keywords("blue sailor collar, white sneakers"), "blue sailor collar, white sneakers")
-        self.assertEqual(format_outfit_keywords(None), "")
 
 
 class CharacterPromptTests(unittest.TestCase):

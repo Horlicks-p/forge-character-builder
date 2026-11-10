@@ -43,11 +43,6 @@ STALE_TAGS_NOTICE = (
     "Press **Reset from selection** to rebuild it, or remove them by hand."
 )
 
-OUTFIT_SOURCE_LABELS = {
-    CHARADB_SOURCE: "CharaDB (Anime)",
-    anhao.OUTFIT_SOURCE: "Anhao (Original)",
-}
-
 
 class SendError(Exception):
     """A send preflight failed; the message is shown to the user as-is."""
@@ -66,18 +61,6 @@ class BuilderContext:
     @property
     def poses_available(self) -> bool:
         return anhao.library_count(self.anhao_root, "Poses") > 0
-
-    def outfit_sources(self) -> dict[str, anhao.AnhaoOutfits]:
-        """Extra outfit providers for ``build_character_prompt``."""
-        return {anhao.OUTFIT_SOURCE: anhao.AnhaoOutfits(self.anhao_root)} if self.anhao_root else {}
-
-    def outfit_source_choices(self, show_anhao: bool = True) -> list[tuple[str, str]]:
-        choices = []
-        if self.charadb.available:
-            choices.append((OUTFIT_SOURCE_LABELS[CHARADB_SOURCE], CHARADB_SOURCE))
-        if show_anhao and anhao.library_count(self.anhao_root, "Outfits"):
-            choices.append((OUTFIT_SOURCE_LABELS[anhao.OUTFIT_SOURCE], anhao.OUTFIT_SOURCE))
-        return choices
 
     def pose_source_choices(self) -> list[tuple[str, str]]:
         choices = [("Anhao", anhao.POSE_SOURCE)]
@@ -100,14 +83,11 @@ class BuilderContext:
             return ""
         return "**No hair or eye options.** " + sources.CHARADB_HINT
 
-    def outfit_hint(self, show_anhao: bool = True) -> str:
-        """Empty-state text for Step 2; ``""`` when an outfit source exists."""
-        if self.outfit_source_choices(show_anhao):
+    def outfit_hint(self) -> str:
+        """Empty-state text for Step 2; ``""`` when CharaDB is usable."""
+        if self.charadb.available:
             return ""
-        text = "**No outfit source is available.** " + sources.CHARADB_HINT
-        if not show_anhao and anhao.library_count(self.anhao_root, "Outfits"):
-            text += " Anhao outfits are installed but hidden: enable them in *Settings → Forge Character Builder*."
-        return text
+        return "**No outfits.** " + sources.CHARADB_HINT
 
     def pose_hint(self) -> str:
         """Empty-state text for Step 3; ``""`` when poses are installed."""
@@ -208,14 +188,9 @@ def character_option_page(ctx: BuilderContext, kind: str) -> GalleryPage:
     return GalleryPage(images, [item.item_id for item in items], 1, 1, len(items))
 
 
-def outfit_items(ctx: BuilderContext, source: str, category: str, query: str, safe_mode: bool) -> list[CatalogItem]:
-    if source == CHARADB_SOURCE:
-        items = ctx.charadb.list_kind(KIND_OUTFIT, safe_mode=safe_mode)
-    elif source == anhao.OUTFIT_SOURCE:
-        items = [anhao.outfit_catalog_item(raw) for raw in anhao.load_library(ctx.anhao_root, "Outfits")]
-        items = [item for item in items if not (safe_mode and item.nsfw)]
-    else:
-        return []
+def outfit_items(ctx: BuilderContext, category: str, query: str, safe_mode: bool) -> list[CatalogItem]:
+    """CharaDB outfits, the only outfit source."""
+    items = ctx.charadb.list_kind(KIND_OUTFIT, safe_mode=safe_mode)
     category = "" if category in (None, "", ALL) else category
     return [
         item
@@ -225,21 +200,14 @@ def outfit_items(ctx: BuilderContext, source: str, category: str, query: str, sa
     ]
 
 
-def outfit_categories(ctx: BuilderContext, source: str, safe_mode: bool) -> list[str]:
-    return [ALL, *sorted({item.category for item in outfit_items(ctx, source, ALL, "", safe_mode)})]
+def outfit_categories(ctx: BuilderContext, safe_mode: bool) -> list[str]:
+    return [ALL, *sorted({item.category for item in outfit_items(ctx, ALL, "", safe_mode)})]
 
 
-def _outfit_thumb(ctx: BuilderContext, item: CatalogItem) -> Path:
-    if item.source_id == CHARADB_SOURCE:
-        return ctx.charadb.thumbnail(item.item_id) or ctx.placeholder
-    path = anhao.asset_path(ctx.anhao_root, "Outfits", item.metadata, thumbnail=True, use_depth=False)
-    return path if path.is_file() else ctx.placeholder
-
-
-def outfit_page(ctx: BuilderContext, source: str, category: str, query: str, safe_mode: bool, page: object) -> GalleryPage:
-    items = outfit_items(ctx, source, category, query, safe_mode)
+def outfit_page(ctx: BuilderContext, category: str, query: str, safe_mode: bool, page: object) -> GalleryPage:
+    items = outfit_items(ctx, category, query, safe_mode)
     page_items, page, total_pages = _paginate(items, page)
-    images = [(str(_outfit_thumb(ctx, item)), _caption(item)) for item in page_items]
+    images = [(str(ctx.charadb.thumbnail(item.item_id) or ctx.placeholder), _caption(item)) for item in page_items]
     return GalleryPage(images, [i.item_id for i in page_items], page, total_pages, len(items))
 
 
@@ -330,13 +298,10 @@ def pose_gallery(
 
 
 def outfit_item(ctx: BuilderContext, ref: Optional[ItemRef]) -> Optional[CatalogItem]:
-    if ref is None:
+    if ref is None or ref.source_id != CHARADB_SOURCE:
         return None
-    if ref.source_id == CHARADB_SOURCE:
-        item = ctx.charadb.get(ref.item_id)
-        return item if item is not None and item.kind == KIND_OUTFIT else None
-    source = ctx.outfit_sources().get(ref.source_id)
-    return source.get(ref.item_id) if source is not None else None
+    item = ctx.charadb.get(ref.item_id)
+    return item if item is not None and item.kind == KIND_OUTFIT else None
 
 
 def pose_record(ctx: BuilderContext, ref: Optional[ItemRef]) -> Optional[dict]:
@@ -404,8 +369,7 @@ def outfit_summary(ctx: BuilderContext, selection: BuilderSelection) -> tuple[st
     item = outfit_item(ctx, selection.outfit)
     if item is None:
         return f"Outfit: *unavailable* (#{selection.outfit.item_id})", ""
-    label = OUTFIT_SOURCE_LABELS.get(item.source_id, item.source_id)
-    return f"Outfit: **#{item.item_id}** · {item.category} · {label}", item.raw_tags
+    return f"Outfit: **#{item.item_id}** · {item.category}", item.raw_tags
 
 
 def pose_mode_label(depth: bool) -> str:
@@ -466,7 +430,7 @@ def regenerate(
     The Final Prompt counts as edited when it differs from the last text this
     builder generated.
     """
-    parts = build_character_prompt(selection, ctx.charadb, outfit_sources=ctx.outfit_sources(), safe_mode=safe_mode)
+    parts = build_character_prompt(selection, ctx.charadb, safe_mode=safe_mode)
     edited = (final_text or "") != (last_generated or "")
     if force or not edited:
         final, notice = parts.final, ""
@@ -481,24 +445,6 @@ def is_edited(final_text: Optional[str], last_generated: Optional[str]) -> bool:
 
 def edited_notice(final_text: Optional[str], last_generated: Optional[str]) -> str:
     return EDITED_NOTICE if is_edited(final_text, last_generated) else ""
-
-
-def change_outfit_source(
-    selection: BuilderSelection, source: Optional[str], *, prompt_edited: bool = False
-) -> tuple[BuilderSelection, list[str]]:
-    """Drop an outfit picked from another provider when the source changes.
-
-    The Final Prompt itself is left to ``regenerate`` (dirty-state rules);
-    an edited prompt only gets a notice that old tags may remain.
-    """
-    current = selection.outfit
-    if current is None or current.source_id == (source or ""):
-        return selection, []
-    label = OUTFIT_SOURCE_LABELS.get(current.source_id, current.source_id)
-    notices = [f"Outfit #{current.item_id} ({label}) was cleared because the outfit source changed."]
-    if prompt_edited:
-        notices.append(STALE_TAGS_NOTICE)
-    return selection.with_changes(outfit=None), notices
 
 
 def _pose_label(ref: ItemRef) -> str:

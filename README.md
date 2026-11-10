@@ -3,13 +3,13 @@
 Forge Character Builder 是 [Forge Neo](https://github.com/Haoming02/sd-webui-forge-classic/tree/neo) 專用的角色 Prompt Builder 與姿勢圖庫擴充。
 
 - 使用 [CharaDB](https://github.com/taki-ttt/charadb) 的 Danbooru tags 組合髮型、髮色、眼睛與服裝。
-- 使用 [ai-pose-gallery-zh](https://github.com/anhao/ai-pose-gallery-zh) 的姿勢、服裝與人像素材。
+- 使用 [ai-pose-gallery-zh](https://github.com/anhao/ai-pose-gallery-zh) 的姿勢素材（人像圖庫預設隱藏）。
 - 將角色 Prompt 追加到既有的 txt2img Prompt，不會刪除原本的 Prompt、LoRA 或 Negative Prompt。
 - 將姿勢圖送到 txt2img 的 ControlNet Unit 1，並自動切換到 txt2img 分頁。
 - 同一姿勢的 4–5 個視角會合併為一張卡片，再由 View angle 切換。
 - 上傳自己的姿勢圖到本機 Custom Poses 圖庫，同樣能送到 ControlNet。
 
-目前版本：**1.6.0**
+目前版本：**1.7.0**
 
 ## 畫面
 
@@ -30,7 +30,7 @@ Forge Character Builder 是 [Forge Neo](https://github.com/Haoming02/sd-webui-fo
 - 一套與目前 checkpoint 架構相容的 ControlNet 模型。下方範例 `xinsirControlnetCanny_v20` 是 **SDXL** 模型。
 - 外部資料視使用的功能而定，都需自行安裝：
   - **CharaDB**：Character Builder 的髮型、髮色、眼睛與二次元服裝。
-  - **Anhao 圖庫**：內建的姿勢、原創服裝與肖像圖庫。
+  - **Anhao 圖庫**：內建的姿勢圖庫（另含預設隱藏的肖像圖庫）。
   - 只用 **Custom Poses**（自己上傳的姿勢圖）時，不需要 Anhao。
 - 外掛本身沒有額外的 pip 套件需求。
 
@@ -80,7 +80,6 @@ forge-character-builder/
 |---|---|---|
 | Pose Gallery／Character Builder Pose | `data/pose-zh.json` | `img/*.png`、`thumbs/*.jpg` |
 | Pose 的 Depth 模式 | 同上 | `img/depth/*.webp`、`thumbs/depth/*.webp` |
-| Anhao Outfit | `data/costume-zh.json` | `img/costume/*.webp`、`thumbs/costume/*.webp` |
 | Portraits（預設隱藏） | `data/portrait-zh.json` | `img/portrait/*.webp`、`thumbs/portrait/*.webp` |
 
 也可以不複製資料，改用環境變數指向完整的 Anhao repository：
@@ -119,7 +118,7 @@ forge-character-builder/
 $env:CHARADB_ROOT = "D:\path\to\charadb_public"
 ```
 
-CharaDB 未安裝時，Pose Gallery 仍可使用，Outfit 也能改選 Anhao (Original)；髮型、髮色與眼睛選項則不會出現。
+CharaDB 未安裝時，Pose Gallery 與 Character Builder 的 Pose 仍可使用；髮型、髮色、眼睛與服裝選項則不會出現。
 
 ### 完整目錄範例
 
@@ -186,7 +185,7 @@ Depth 圖已經是處理完成的控制圖，所以外掛會把 Preprocessor 設
 ### Character Builder
 
 1. **Character**：用圖片卡片選擇 Hairstyle、Hair color、Eye color 與 Details。
-2. **Outfit**：從 CharaDB (Anime) 或 Anhao (Original) 選擇服裝。
+2. **Outfit**：從 CharaDB 選擇服裝。
 3. **Pose**：用 **Pose source** 選擇 Anhao 或 Custom Poses。Anhao 可再從右側 View angle 切換實際存在的 Front、High angle、Low angle、Side 或 Three-quarter 視角；Custom Poses 沒有視角與 Normal／Depth，會依儲存的 Input type 決定 Preprocessor。
 4. 在右側檢查或修改 **Final Prompt (editable)**。
 5. 使用 **Append Prompt to txt2img**、**Send Pose to ControlNet 1** 或 **Send All**。
@@ -234,7 +233,6 @@ Depth 圖已經是處理完成的控制圖，所以外掛會把 Preprocessor 設
 在 **Settings → Forge Character Builder** 可設定：
 
 - **Show the Portraits library in the Pose Gallery tab**：顯示 Portraits，預設關閉。
-- **Offer Anhao (Original) outfits as a Character Builder outfit source**：允許使用 Anhao 服裝，預設開啟。
 
 變更後按 **Reload UI**。分頁上方的 **Data sources** 會顯示 CharaDB 與 Anhao 的狀態、項目數量及缺少的檔案。
 
@@ -260,6 +258,12 @@ unavailable 表示找不到可用的資料夾，請把 `FCB_CUSTOM_POSE_DIR` 設
 ### Prompt 會蓋掉我原本的內容嗎？
 
 不會。Append 與 Send All 都是在 txt2img Prompt 尾端追加並自動處理逗號；既有 Prompt、LoRA 與 Negative Prompt 不會被清除。
+
+## v1.7.0 重點
+
+- 移除 Anhao 服裝：Pose Gallery 不再有 **Outfits** 圖庫，Character Builder 的 **2 · Outfit** 只使用 CharaDB。這批服裝是真實系參考圖，提示詞彼此相近，不適合直接用在 SD 上。
+- 一併移除設定 **Offer Anhao (Original) outfits as a Character Builder outfit source**。Forge 的 `config.json` 可能還留著 `fcb_show_anhao_outfits`，不影響使用，可以不理會。
+- 已安裝的 Anhao 資料夾不需要變動；`costume-zh.json` 與 `img/costume/` 不再被讀取，想省空間可自行刪除。
 
 ## v1.6.0 重點
 

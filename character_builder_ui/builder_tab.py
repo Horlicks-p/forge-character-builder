@@ -65,7 +65,6 @@ def build_builder_tab(
     ctx: session.BuilderContext,
     controlnet_target: Optional[Any],
     *,
-    show_anhao_outfits: bool = True,
     entry_tab: Optional[Any] = None,
 ) -> tuple[Callable[[], dict], list]:
     """Build the tab inside the current Blocks context.
@@ -76,8 +75,6 @@ def build_builder_tab(
     since Step 3 can already be the open sub-tab.
     """
     controlnet_ok = controlnet_target is not None
-    outfit_sources = ctx.outfit_source_choices(show_anhao_outfits)
-    default_outfit_source = outfit_sources[0][1] if outfit_sources else ""
     pose_sources = ctx.pose_source_choices()
     default_pose_source = ctx.default_pose_source()
     starts_custom = default_pose_source == custom_poses.SOURCE_ID
@@ -161,12 +158,10 @@ def build_builder_tab(
                             eye_shape = gr.Dropdown(session.dropdown_choices(ctx, KIND_EYE_SHAPE), value="", label="Eye shape", filterable=True)
 
                 with gr.Tab("2 · Outfit"):
-                    _hint(ctx.outfit_hint(show_anhao_outfits))
+                    _hint(ctx.outfit_hint())
                     with gr.Row():
-                        outfit_source = gr.Radio(outfit_sources, value=default_outfit_source or None, label="Source")
-                        outfit_category = gr.Dropdown([session.ALL], value=session.ALL, label="Category")
-                    with gr.Row():
-                        outfit_search = gr.Textbox(label="Search outfits", placeholder="Tag, category, or ID", scale=3)
+                        outfit_category = gr.Dropdown([session.ALL], value=session.ALL, label="Category", scale=1)
+                        outfit_search = gr.Textbox(label="Search outfits", placeholder="Tag, category, or ID", scale=2)
                         outfit_clear = gr.Button("Clear outfit", scale=0, min_width=120)
                     outfit_gallery = gr.Gallery(
                         label="Outfits",
@@ -306,11 +301,11 @@ def build_builder_tab(
 
     hair_gallery_outputs = [hair_gallery, hair_ids, hair_page, hair_info]
 
-    def outfit_gallery_update(source, category, query, safe, page):
-        result = session.outfit_page(ctx, source, category, query, bool(safe), page)
+    def outfit_gallery_update(category, query, safe, page):
+        result = session.outfit_page(ctx, category, query, bool(safe), page)
         return result.images, result.ids, result.page, result.info
 
-    outfit_gallery_inputs = [outfit_source, outfit_category, outfit_search, safe_mode, outfit_page_no]
+    outfit_gallery_inputs = [outfit_category, outfit_search, safe_mode, outfit_page_no]
     outfit_gallery_outputs = [outfit_gallery, outfit_ids, outfit_page_no, outfit_info]
 
     def pose_gallery_update(source, query, system, category, safe, mode, page):
@@ -320,8 +315,8 @@ def build_builder_tab(
     pose_gallery_inputs = [pose_source, pose_search, pose_system, pose_category, safe_mode, pose_mode, pose_page_no]
     pose_gallery_outputs = [pose_gallery, pose_state, pose_page_no, pose_info]
 
-    def outfit_filters(source, safe, category):
-        options = session.outfit_categories(ctx, source, bool(safe))
+    def outfit_filters(safe, category):
+        options = session.outfit_categories(ctx, bool(safe))
         return gr.update(choices=options, value=category if category in options else session.ALL)
 
     def pose_filters(source, safe, system, category):
@@ -408,40 +403,31 @@ def build_builder_tab(
 
     # ------------------------------------------------------------ Step 2 events
 
-    def reset_outfit_page(source, category, query, safe):
-        return outfit_gallery_update(source, category, query, safe, 1)
+    def reset_outfit_page(category, query, safe):
+        return outfit_gallery_update(category, query, safe, 1)
 
-    def change_outfit_source(source, sel, final, last, safe):
-        sel, notices = session.change_outfit_source(sel, source, prompt_edited=session.is_edited(final, last))
-        return view(sel, final, last, safe, notices=notices)
-
-    outfit_source.change(
-        change_outfit_source, [outfit_source, selection, *prompt_inputs], view_outputs, show_progress=False
-    ).then(outfit_filters, [outfit_source, safe_mode, outfit_category], [outfit_category], show_progress=False).then(
-        reset_outfit_page, outfit_gallery_inputs[:-1], outfit_gallery_outputs, show_progress=False
-    )
     outfit_category.change(reset_outfit_page, outfit_gallery_inputs[:-1], outfit_gallery_outputs, show_progress=False)
     outfit_search.submit(reset_outfit_page, outfit_gallery_inputs[:-1], outfit_gallery_outputs, show_progress=False)
     outfit_prev.click(
-        lambda s, c, q, safe, p: outfit_gallery_update(s, c, q, safe, int(p or 1) - 1),
+        lambda c, q, safe, p: outfit_gallery_update(c, q, safe, int(p or 1) - 1),
         outfit_gallery_inputs,
         outfit_gallery_outputs,
         show_progress=False,
     )
     outfit_next.click(
-        lambda s, c, q, safe, p: outfit_gallery_update(s, c, q, safe, int(p or 1) + 1),
+        lambda c, q, safe, p: outfit_gallery_update(c, q, safe, int(p or 1) + 1),
         outfit_gallery_inputs,
         outfit_gallery_outputs,
         show_progress=False,
     )
 
-    def pick_outfit(pick, source, ids, sel, final, last, safe):
+    def pick_outfit(pick, ids, sel, final, last, safe):
         index = _parse_pick(pick)
-        if not source or index is None or not 0 <= index < len(ids):
+        if index is None or not 0 <= index < len(ids):
             return view(sel, final, last, safe)
-        return view(sel.with_changes(outfit=ItemRef(source, ids[index])), final, last, safe)
+        return view(sel.with_changes(outfit=ItemRef(CHARADB_SOURCE, ids[index])), final, last, safe)
 
-    outfit_pick.change(pick_outfit, [outfit_pick, outfit_source, outfit_ids, selection, *prompt_inputs], view_outputs, show_progress=False)
+    outfit_pick.change(pick_outfit, [outfit_pick, outfit_ids, selection, *prompt_inputs], view_outputs, show_progress=False)
     outfit_clear.click(
         lambda sel, final, last, safe: view(sel.with_changes(outfit=None), final, last, safe),
         [selection, *prompt_inputs],
@@ -555,7 +541,7 @@ def build_builder_tab(
         tab.select(current_health, outputs=[health_md], show_progress=False)
 
     safe_mode.change(change_safe_mode, [safe_mode, selection, final_box, last_generated], view_outputs, show_progress=False).then(
-        outfit_filters, [outfit_source, safe_mode, outfit_category], [outfit_category], show_progress=False
+        outfit_filters, [safe_mode, outfit_category], [outfit_category], show_progress=False
     ).then(reset_outfit_page, outfit_gallery_inputs[:-1], outfit_gallery_outputs, show_progress=False).then(
         pose_filters, [pose_source, safe_mode, pose_system, pose_category], [pose_system, pose_category], show_progress=False
     ).then(reset_pose_page, pose_gallery_inputs[:-1], pose_gallery_outputs, show_progress=False)
@@ -621,7 +607,7 @@ def build_builder_tab(
         hair = session.hairstyle_page(ctx, "", 1, None)
         hair_colors = session.character_option_page(ctx, KIND_HAIR_COLOR)
         eye_colors = session.character_option_page(ctx, KIND_EYE_COLOR)
-        outfit = session.outfit_page(ctx, default_outfit_source, session.ALL, "", True, 1)
+        outfit = session.outfit_page(ctx, session.ALL, "", True, 1)
         pose, state = session.pose_gallery(ctx, default_pose_source, "", session.ALL, session.ALL, True, False, 1)
         system_filter, category_filter = pose_filters(default_pose_source, True, session.ALL, session.ALL)
         return {
@@ -633,7 +619,7 @@ def build_builder_tab(
             hair_color_ids: hair_colors.ids,
             eye_color_gallery: eye_colors.images,
             eye_color_ids: eye_colors.ids,
-            outfit_category: gr.update(choices=session.outfit_categories(ctx, default_outfit_source, True), value=session.ALL),
+            outfit_category: gr.update(choices=session.outfit_categories(ctx, True), value=session.ALL),
             outfit_gallery: outfit.images,
             outfit_ids: outfit.ids,
             outfit_page_no: outfit.page,
