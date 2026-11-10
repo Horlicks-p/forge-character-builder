@@ -3,7 +3,7 @@
 Forge Character Builder 是 [Forge Neo](https://github.com/Haoming02/sd-webui-forge-classic/tree/neo) 專用的角色 Prompt Builder 與姿勢圖庫擴充。
 
 - 使用 [CharaDB](https://github.com/taki-ttt/charadb) 的 Danbooru tags 組合髮型、髮色、眼睛與服裝。
-- 使用 [ai-pose-gallery-zh](https://github.com/anhao/ai-pose-gallery-zh) 的姿勢素材（人像圖庫預設隱藏）。
+- 使用 [ai-pose-gallery-zh](https://github.com/anhao/ai-pose-gallery-zh) 的姿勢素材。
 - 將角色 Prompt 追加到既有的 txt2img Prompt，不會刪除原本的 Prompt、LoRA 或 Negative Prompt。
 - 將姿勢圖送到 txt2img 的 ControlNet Unit 1，並自動切換到 txt2img 分頁。
 - 同一姿勢的 4–5 個視角會合併為一張卡片，再由 View angle 切換。

@@ -105,7 +105,6 @@ class AnhaoTests(TempDataTest):
         self.assertEqual(anhao.load_library(None, "Poses"), ())
 
 
-
 class GalleryTests(TempDataTest):
     def test_dropdown_choices(self):
         choices = session.dropdown_choices(self.ctx, KIND_EYE_SHAPE)
@@ -142,7 +141,6 @@ class GalleryTests(TempDataTest):
         self.assertEqual((page.ids, page.page, page.total_pages), (["1", "3", "4"], 1, 1))
         self.assertEqual(page.images[1][0], str(PLACEHOLDER_IMAGE))
         self.assertIn("Page 1 of 1", page.info)
-
 
 
 class PromptStateTests(TempDataTest):
