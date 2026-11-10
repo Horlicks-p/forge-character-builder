@@ -28,7 +28,11 @@ Forge Character Builder 是 [Forge Neo](https://github.com/Haoming02/sd-webui-fo
 - Forge Neo（`sd-webui-forge-classic` 的 `neo` 分支）。
 - Forge 內建的 ControlNet UI。若 ControlNet 無法載入，Copy／Append Prompt 仍可使用，但 Send Pose 與 Send All 會停用。
 - 一套與目前 checkpoint 架構相容的 ControlNet 模型。下方範例 `xinsirControlnetCanny_v20` 是 **SDXL** 模型。
-- CharaDB 與 Anhao 圖庫資料需自行安裝；外掛本身沒有額外的 pip 套件需求。
+- 外部資料視使用的功能而定，都需自行安裝：
+  - **CharaDB**：Character Builder 的髮型、髮色、眼睛與二次元服裝。
+  - **Anhao 圖庫**：內建的姿勢、原創服裝與肖像圖庫。
+  - 只用 **Custom Poses**（自己上傳的姿勢圖）時，不需要 Anhao。
+- 外掛本身沒有額外的 pip 套件需求。
 
 ## 安裝外掛
 
